@@ -104,11 +104,21 @@ Things worth knowing about this approach:
 - The URL is random and **changes every time you restart the tunnel** (this is the free, no-signup "quick tunnel"). For a stable, permanent URL you'd need a free Cloudflare account plus a domain, or move to a real hosting provider (Railway, Render, a VPS, etc.) so the app runs independently of this PC.
 - The public URL only serves the built (`vite build`) client, not the dev server with hot-reload — re-run `npm run start:prod` after making changes and rebuilding.
 
-## Deploying for real, always-on access (Fly.io)
+## Deploying for real, always-on access
 
-The tunnel above depends on this PC and this terminal staying on. For a link that works from anywhere, anytime, independent of this machine, this repo is set up to deploy to [Fly.io](https://fly.io) — `Dockerfile` builds the app (client + server in one image), `fly.toml` configures a single always-on machine plus a persistent volume so the SQLite database survives restarts and redeploys (Fly's free tier, unlike some others, supports a small persistent volume).
+The tunnel above depends on this PC and this terminal staying on. For a link that works from anywhere, anytime, independent of this machine, the app is deployed via GitHub → Render.
 
-You'll need to do the account/auth steps yourself — here's the full sequence, run from `C:\Users\nilad\project-tracker`:
+### Current deployment: Render (free, no card required)
+
+Live at **https://drive-e0o3.onrender.com**. Deployed from [github.com/GOD7ZEUS/DRIVE](https://github.com/GOD7ZEUS/DRIVE) using the `render.yaml` blueprint in this repo — Render builds `Dockerfile` (same image used for the Fly option below) and redeploys automatically on every push to `main`.
+
+**Trade-off to know**: Render's free tier has no persistent disk, so the SQLite database resets on every redeploy and possibly on restarts. It also spins the instance down after ~15 minutes of no traffic — the first request after that can take 30–60 seconds while it wakes back up (you may see this as a slow load or a transient error on the very first hit; retry after a few seconds).
+
+To ship a code change: commit, push to `main` — Render redeploys automatically. No manual step needed.
+
+### Alternative: Fly.io (free, but requires a card on file)
+
+This repo is also set up to deploy to [Fly.io](https://fly.io), which — unlike Render — supports a small **persistent volume** on its free tier, so the database survives restarts/redeploys, and the instance can be configured to stay always-on rather than sleeping. The trade-off is Fly requires a payment method on file even for free-tier usage (not charged unless you exceed the free allowance).
 
 ```
 flyctl auth login
@@ -118,13 +128,12 @@ flyctl secrets set JWT_SECRET=91c3fe63559acbab98dfb920027b2ce3d7f5ed2a9d2bbfbc30
 flyctl deploy
 ```
 
-- `auth login` opens a browser to sign in or create a Fly account. Fly currently asks for a payment method even for free-tier usage (to prevent abuse) — you won't be charged as long as you stay within the free allowance, but have a card ready.
+- `auth login` opens a browser to sign in or create a Fly account.
 - `launch --no-deploy` reads the existing `fly.toml`/`Dockerfile` and will ask you to confirm the app name (`drive-royalconstruct` — pick something else if that's taken) and region (defaults to Mumbai/`bom`).
 - The `volumes create` command only needs to run once ever, before the first deploy.
-- The `JWT_SECRET` above was randomly generated for you — feel free to use it as-is, it's not shared anywhere else.
 - No local Docker install needed — `flyctl deploy` builds the image on Fly's remote builder.
 
-After that, the app is live at `https://<your-app-name>.fly.dev`, and the first visitor is walked through creating the Super Admin account (no env vars to set for that). To ship a code change later, just run `flyctl deploy` again from this directory.
+After that, the app is live at `https://<your-app-name>.fly.dev`. To ship a code change later, run `flyctl deploy` again from this directory.
 
 ## API
 
