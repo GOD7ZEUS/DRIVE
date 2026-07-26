@@ -108,11 +108,13 @@ Things worth knowing about this approach:
 
 The tunnel above depends on this PC and this terminal staying on. For a link that works from anywhere, anytime, independent of this machine, the app is deployed via GitHub → Render.
 
-### Current deployment: Render (free, no card required)
+### Current deployment: Render + Turso (free, no card required)
 
 Live at **https://drive-e0o3.onrender.com**. Deployed from [github.com/GOD7ZEUS/DRIVE](https://github.com/GOD7ZEUS/DRIVE) using the `render.yaml` blueprint in this repo — Render builds `Dockerfile` (same image used for the Fly option below) and redeploys automatically on every push to `main`.
 
-**Trade-off to know**: Render's free tier has no persistent disk, so the SQLite database resets on every redeploy and possibly on restarts. It also spins the instance down after ~15 minutes of no traffic — the first request after that can take 30–60 seconds while it wakes back up (you may see this as a slow load or a transient error on the very first hit; retry after a few seconds).
+**Database**: Render's own free tier has no persistent disk (a plain SQLite file there would reset on every redeploy/restart), so the app connects instead to a [Turso](https://turso.tech) database — a free, hosted, persistent libSQL database — via the `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` environment variables set in Render's dashboard (Environment tab). Data now survives redeploys, restarts, and Render's idle spin-down. Locally, with those two variables unset, the app falls back to a local SQLite file (`server/tracker.db`) automatically — no Turso account needed for dev.
+
+Render still spins the instance down after ~15 minutes of no traffic — the first request after that can take 30–60 seconds while it wakes back up (you may see this as a slow load on the very first hit; retry after a few seconds). This no longer causes data loss, only a slow first request.
 
 To ship a code change: commit, push to `main` — Render redeploys automatically. No manual step needed.
 
