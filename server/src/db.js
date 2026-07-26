@@ -1,16 +1,45 @@
-import { DatabaseSync } from 'node:sqlite';
+import { createClient } from '@libsql/client';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import bcrypt from 'bcryptjs';
 import 'dotenv/config';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = process.env.DB_PATH || path.join(__dirname, '..', 'tracker.db');
 
-export const db = new DatabaseSync(dbPath);
-db.exec('PRAGMA foreign_keys = ON');
+// Turso (remote, persistent) in production if configured; otherwise a local
+// file — same libSQL client either way, so local dev needs no cloud account.
+const dbUrl = process.env.TURSO_DATABASE_URL
+  ? process.env.TURSO_DATABASE_URL
+  : pathToFileURL(process.env.DB_PATH || path.join(__dirname, '..', 'tracker.db')).href;
 
-db.exec(`
+export const db = createClient({
+  url: dbUrl,
+  authToken: process.env.TURSO_AUTH_TOKEN,
+});
+
+// Thin sync-shaped helpers so call sites read like `await get(sql, ...args)`
+// instead of juggling `db.execute({ sql, args })` and result-row shapes everywhere.
+export async function get(sql, ...args) {
+  const rs = await db.execute({ sql, args });
+  return rs.rows[0];
+}
+
+export async function all(sql, ...args) {
+  const rs = await db.execute({ sql, args });
+  return rs.rows;
+}
+
+export async function run(sql, ...args) {
+  const rs = await db.execute({ sql, args });
+  return {
+    lastInsertRowid: rs.lastInsertRowid === undefined ? undefined : Number(rs.lastInsertRowid),
+    changes: rs.rowsAffected,
+  };
+}
+
+await db.execute('PRAGMA foreign_keys = ON');
+
+await db.executeMultiple(`
   CREATE TABLE IF NOT EXISTS projects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -77,54 +106,59 @@ db.exec(`
   );
 `);
 
-function ensureColumn(table, column, definition) {
-  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+async function ensureColumn(table, column, definition) {
+  const columns = await all(`PRAGMA table_info(${table})`);
   const exists = columns.some((c) => c.name === column);
   if (!exists) {
-    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
 }
 
-ensureColumn('users', 'company', 'TEXT');
-ensureColumn('users', 'department', 'TEXT');
-ensureColumn('users', 'company_id', 'INTEGER REFERENCES companies(id)');
-ensureColumn('users', 'department_id', 'INTEGER REFERENCES departments(id)');
-ensureColumn('projects', 'company', 'TEXT');
-ensureColumn('projects', 'department', 'TEXT');
-ensureColumn('projects', 'company_id', 'INTEGER REFERENCES companies(id)');
-ensureColumn('projects', 'department_id', 'INTEGER REFERENCES departments(id)');
+await ensureColumn('users', 'company', 'TEXT');
+await ensureColumn('users', 'department', 'TEXT');
+await ensureColumn('users', 'company_id', 'INTEGER REFERENCES companies(id)');
+await ensureColumn('users', 'department_id', 'INTEGER REFERENCES departments(id)');
+await ensureColumn('projects', 'company', 'TEXT');
+await ensureColumn('projects', 'department', 'TEXT');
+await ensureColumn('projects', 'company_id', 'INTEGER REFERENCES companies(id)');
+await ensureColumn('projects', 'department_id', 'INTEGER REFERENCES departments(id)');
 
-export function getOrCreateCompany(name) {
+export async function getOrCreateCompany(name) {
   const trimmed = name.trim();
-  const existing = db.prepare('SELECT * FROM companies WHERE name = ?').get(trimmed);
+  const existing = await get('SELECT * FROM companies WHERE name = ?', trimmed);
   if (existing) return existing;
-  const result = db.prepare('INSERT INTO companies (name) VALUES (?)').run(trimmed);
-  return db.prepare('SELECT * FROM companies WHERE id = ?').get(result.lastInsertRowid);
+  const result = await run('INSERT INTO companies (name) VALUES (?)', trimmed);
+  return get('SELECT * FROM companies WHERE id = ?', result.lastInsertRowid);
 }
 
-export function getOrCreateDepartment(companyId, name) {
+export async function getOrCreateDepartment(companyId, name) {
   const trimmed = name.trim();
-  const existing = db
-    .prepare('SELECT * FROM departments WHERE company_id = ? AND name = ?')
-    .get(companyId, trimmed);
+  const existing = await get(
+    'SELECT * FROM departments WHERE company_id = ? AND name = ?',
+    companyId,
+    trimmed
+  );
   if (existing) return existing;
-  const result = db
-    .prepare('INSERT INTO departments (company_id, name) VALUES (?, ?)')
-    .run(companyId, trimmed);
-  return db.prepare('SELECT * FROM departments WHERE id = ?').get(result.lastInsertRowid);
+  const result = await run(
+    'INSERT INTO departments (company_id, name) VALUES (?, ?)',
+    companyId,
+    trimmed
+  );
+  return get('SELECT * FROM departments WHERE id = ?', result.lastInsertRowid);
 }
 
-const superAdminCount = db
-  .prepare("SELECT COUNT(*) as count FROM users WHERE role = 'super_admin'")
-  .get().count;
+const superAdminCount = (await get("SELECT COUNT(*) as count FROM users WHERE role = 'super_admin'"))
+  .count;
 
 // Dev convenience: if server/.env supplies credentials, seed immediately.
-// Otherwise (e.g. a freshly installed desktop app) the first person to open
-// the app is walked through creating the Super Admin via POST /api/auth/setup.
+// Otherwise (e.g. a freshly installed desktop app, or a fresh Turso database)
+// the first person to open the app is walked through creating the Super Admin
+// via POST /api/auth/setup.
 if (superAdminCount === 0 && process.env.SUPER_ADMIN_EMAIL && process.env.SUPER_ADMIN_PASSWORD) {
   const email = process.env.SUPER_ADMIN_EMAIL;
   const passwordHash = bcrypt.hashSync(process.env.SUPER_ADMIN_PASSWORD, 10);
-  db.prepare('INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?)').run(
+  await run(
+    'INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?)',
     email.toLowerCase(),
     passwordHash,
     'super_admin'

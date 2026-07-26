@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { db } from '../db.js';
+import { get } from '../db.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -25,7 +25,7 @@ export function signToken(user) {
   );
 }
 
-export function requireAuth(req, res, next) {
+export async function requireAuth(req, res, next) {
   const token = req.cookies[COOKIE_NAME];
   if (!token) return res.status(401).json({ error: 'not authenticated' });
   let payload;
@@ -35,17 +35,21 @@ export function requireAuth(req, res, next) {
     return res.status(401).json({ error: 'invalid or expired session' });
   }
 
-  // Re-check the DB on every request so a deleted/edited account loses access
-  // immediately instead of staying valid until the JWT's 7-day expiry.
-  const user = db
-    .prepare('SELECT id, email, role, company, department, company_id, department_id FROM users WHERE id = ?')
-    .get(payload.id);
-  if (!user) {
-    return res.status(401).json({ error: 'account no longer exists' });
+  try {
+    // Re-check the DB on every request so a deleted/edited account loses access
+    // immediately instead of staying valid until the JWT's 7-day expiry.
+    const user = await get(
+      'SELECT id, email, role, company, department, company_id, department_id FROM users WHERE id = ?',
+      payload.id
+    );
+    if (!user) {
+      return res.status(401).json({ error: 'account no longer exists' });
+    }
+    req.user = user;
+    next();
+  } catch (err) {
+    next(err);
   }
-
-  req.user = user;
-  next();
 }
 
 export function requireRole(...roles) {
