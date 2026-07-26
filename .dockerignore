@@ -1,0 +1,7 @@
+**/node_modules
+**/dist
+server/tracker.db
+server/.env
+desktop
+.git
+*.log

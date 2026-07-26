@@ -1,0 +1,45 @@
+{
+  "name": "drive-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^43.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.royalconstruct.drive",
+    "productName": "Drive",
+    "asar": false,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js"
+    ],
+    "extraResources": [
+      {
+        "from": "../server",
+        "to": "server",
+        "filter": [
+          "**/*",
+          "!.env",
+          "!tracker.db"
+        ]
+      },
+      {
+        "from": "../client/dist",
+        "to": "client/dist"
+      }
+    ],
+    "win": {
+      "target": "portable",
+      "signAndEditExecutable": false
+    }
+  }
+}

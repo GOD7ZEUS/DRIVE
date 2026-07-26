@@ -1,0 +1,195 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { api } from '../api.js';
+import { useAuth } from '../auth.jsx';
+import StatusBadge from '../components/StatusBadge.jsx';
+import CompanyDepartmentFields from '../components/CompanyDepartmentFields.jsx';
+
+const STATUSES = ['planning', 'active', 'on_hold', 'completed'];
+
+export default function Projects() {
+  const { user } = useAuth();
+  const isSuperAdmin = user.role === 'super_admin';
+  const canEdit = user.role !== 'view';
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [projects, setProjects] = useState(null);
+  const [error, setError] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [status, setStatus] = useState('planning');
+  const [company, setCompany] = useState('');
+  const [department, setDepartment] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [companyFilter, setCompanyFilter] = useState(searchParams.get('companyId') || 'all');
+  const [departmentFilter, setDepartmentFilter] = useState(searchParams.get('departmentId') || 'all');
+
+  function load() {
+    api.getProjects().then(setProjects).catch((e) => setError(e.message));
+  }
+
+  useEffect(load, []);
+
+  const companies = useMemo(() => {
+    if (!projects) return [];
+    const byId = new Map();
+    for (const p of projects) {
+      if (p.company_id) byId.set(p.company_id, p.company);
+    }
+    return [...byId.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [projects]);
+
+  const visibleProjects = useMemo(() => {
+    if (!projects) return [];
+    if (!isSuperAdmin) return projects;
+    return projects.filter((p) => {
+      if (companyFilter !== 'all' && String(p.company_id) !== companyFilter) return false;
+      if (departmentFilter !== 'all' && String(p.department_id) !== departmentFilter) return false;
+      return true;
+    });
+  }, [projects, companyFilter, departmentFilter, isSuperAdmin]);
+
+  function handleCompanyFilterChange(value) {
+    setCompanyFilter(value);
+    setDepartmentFilter('all');
+    setSearchParams(value === 'all' ? {} : { companyId: value });
+  }
+
+  function clearFilter() {
+    setCompanyFilter('all');
+    setDepartmentFilter('all');
+    setSearchParams({});
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      const payload = { name, description, status };
+      if (isSuperAdmin) {
+        payload.company = company;
+        payload.department = department;
+      }
+      await api.createProject(payload);
+      setName('');
+      setDescription('');
+      setStatus('planning');
+      setCompany('');
+      setDepartment('');
+      setShowForm(false);
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const filteredDepartmentName =
+    departmentFilter !== 'all' ? projects?.find((p) => String(p.department_id) === departmentFilter)?.department : null;
+
+  return (
+    <div>
+      <div className="row-between">
+        <h1>Projects</h1>
+        <div className="row">
+          {isSuperAdmin && projects && projects.length > 0 && (
+            <select value={companyFilter} onChange={(e) => handleCompanyFilterChange(e.target.value)}>
+              <option value="all">All companies</option>
+              {companies.map(([id, name]) => (
+                <option key={id} value={id}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          )}
+          {canEdit && (
+            <button className="primary" onClick={() => setShowForm((s) => !s)}>
+              {showForm ? 'Cancel' : 'New Project'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {isSuperAdmin && departmentFilter !== 'all' && filteredDepartmentName && (
+        <p className="muted" style={{ marginBottom: 12 }}>
+          Filtered to department <strong>{filteredDepartmentName}</strong> ·{' '}
+          <a href="#" onClick={(e) => { e.preventDefault(); clearFilter(); }}>
+            clear
+          </a>
+        </p>
+      )}
+
+      {canEdit && showForm && (
+        <form className="panel form-grid" onSubmit={handleSubmit} style={{ marginBottom: 20 }}>
+          <label>
+            Name
+            <br />
+            <input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+          </label>
+          <label>
+            Description
+            <br />
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
+          </label>
+          <label>
+            Status
+            <br />
+            <select value={status} onChange={(e) => setStatus(e.target.value)}>
+              {STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </label>
+          {isSuperAdmin ? (
+            <CompanyDepartmentFields
+              company={company}
+              department={department}
+              onCompanyChange={setCompany}
+              onDepartmentChange={setDepartment}
+            />
+          ) : (
+            <p className="muted">
+              Will be created under <strong>{user.company}</strong> / <strong>{user.department}</strong>
+            </p>
+          )}
+          {error && <p className="error">{error}</p>}
+          <div>
+            <button type="submit" className="primary" disabled={submitting}>
+              Create
+            </button>
+          </div>
+        </form>
+      )}
+
+      {error && <p className="error">{error}</p>}
+      {!projects && !error && <p className="muted">Loading…</p>}
+      {projects && projects.length === 0 && <p className="muted">No projects yet.</p>}
+      {projects && projects.length > 0 && visibleProjects.length === 0 && (
+        <p className="muted">No projects match this filter.</p>
+      )}
+
+      <div className="list">
+        {visibleProjects.map((p) => (
+          <Link key={p.id} to={`/projects/${p.id}`} className="list-item">
+            <div>
+              <div className="title">{p.name}</div>
+              {isSuperAdmin && (
+                <div className="muted">
+                  {p.company} <span className="key-tag">Co.{p.company_id}</span> / {p.department}{' '}
+                  <span className="key-tag">Dept.{p.department_id}</span>
+                </div>
+              )}
+              {p.description && <div className="muted">{p.description}</div>}
+            </div>
+            <StatusBadge status={p.status} />
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
