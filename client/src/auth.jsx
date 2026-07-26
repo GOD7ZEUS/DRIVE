@@ -12,12 +12,14 @@ export function AuthProvider({ children }) {
     api
       .getMe()
       .then(setUser)
-      .catch(async (err) => {
+      .catch(async () => {
+        // Any failure here (not authenticated, or a transient platform-level error
+        // like a cold-start 404 on a free hosting tier) means we don't know who's
+        // logged in — always check setup status rather than silently assuming
+        // "no setup needed" just because the error wasn't a clean 401.
         setUser(null);
-        if (err.status === 401) {
-          const status = await api.getAuthStatus().catch(() => ({ needsSetup: false }));
-          setNeedsSetup(status.needsSetup);
-        }
+        const status = await api.getAuthStatus().catch(() => ({ needsSetup: false }));
+        setNeedsSetup(status.needsSetup);
       })
       .finally(() => setLoading(false));
   }, []);
