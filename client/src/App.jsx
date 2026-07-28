@@ -11,12 +11,14 @@ import Companies from './pages/Companies.jsx';
 import Login from './pages/Login.jsx';
 import LoadingScreen from './components/LoadingScreen.jsx';
 import ChangePasswordModal from './components/ChangePasswordModal.jsx';
+import AccountDrawer from './components/AccountDrawer.jsx';
 
 export default function App() {
   const { user, loading, logout } = useAuth();
   const [theme, toggleTheme] = useTheme();
   const location = useLocation();
   const [showChangePassword, setShowChangePassword] = useState(false);
+  const [showDrawer, setShowDrawer] = useState(false);
 
   if (loading) return <LoadingScreen />;
   if (!user) return <Login />;
@@ -24,6 +26,14 @@ export default function App() {
   return (
     <div className="app">
       <nav className="navbar">
+        <button
+          type="button"
+          className="icon-button tray-button"
+          onClick={() => setShowDrawer(true)}
+          aria-label="Open account menu"
+        >
+          ☰
+        </button>
         <span className="brand">Drive</span>
         <NavLink to="/" end className={({ isActive }) => (isActive ? 'active' : '')}>
           Dashboard
@@ -41,17 +51,20 @@ export default function App() {
             Users
           </NavLink>
         )}
-        <div className="navbar-right">
-          <button onClick={toggleTheme} title="Toggle theme">
-            {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
-          </button>
-          <span className="muted">
-            {user.email} · {user.role === 'super_admin' ? 'Super Admin' : user.role === 'admin' ? 'Admin' : 'View'}
-          </span>
-          <button onClick={() => setShowChangePassword(true)}>Change Password</button>
-          <button onClick={logout}>Log out</button>
-        </div>
       </nav>
+      {showDrawer && (
+        <AccountDrawer
+          user={user}
+          theme={theme}
+          toggleTheme={toggleTheme}
+          onClose={() => setShowDrawer(false)}
+          onOpenChangePassword={() => {
+            setShowDrawer(false);
+            setShowChangePassword(true);
+          }}
+          onLogout={logout}
+        />
+      )}
       {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} />}
       <main className="content" key={location.pathname}>
         <Routes>

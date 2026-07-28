@@ -146,7 +146,7 @@ a {
   z-index: 1;
 }
 
-.navbar .brand {
+.brand {
   font-weight: 800;
   font-size: 19px;
   letter-spacing: -0.03em;
@@ -170,12 +170,9 @@ a {
   color: var(--accent);
 }
 
-.navbar-right {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+.tray-button {
+  font-size: 19px;
+  margin-right: 4px;
 }
 
 .login-screen {
@@ -252,6 +249,59 @@ a {
 
 .icon-button:hover {
   opacity: 1;
+}
+
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 8, 20, 0.45);
+  display: flex;
+  z-index: 100;
+  animation: fadeSlideIn 0.18s ease;
+}
+
+.drawer-panel {
+  width: min(280px, 84vw);
+  height: 100%;
+  border-radius: 0;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  animation: slideInLeft 0.22s ease;
+}
+
+.drawer-account {
+  padding: 14px 16px;
+  background: var(--accent-bg);
+  border-radius: 10px;
+}
+
+.drawer-account .title {
+  color: var(--text-h);
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.drawer-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.drawer-actions button {
+  text-align: left;
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .detail-table {
@@ -576,17 +626,6 @@ form.inline-form {
   .navbar {
     padding: 12px 14px;
     gap: 8px 14px;
-  }
-
-  .navbar-right {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .navbar-right .muted {
-    order: 1;
-    flex-basis: 100%;
-    text-align: center;
   }
 
   .row-between {
