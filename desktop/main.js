@@ -1,10 +1,13 @@
 import { app, BrowserWindow, dialog } from 'electron';
-import { autoUpdater } from 'electron-updater';
+// electron-updater is CommonJS; under strict ESM its named exports aren't
+// statically analyzable, so it has to come in via the default export.
+import electronUpdaterPkg from 'electron-updater';
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+const { autoUpdater } = electronUpdaterPkg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = 3001;
 const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
@@ -67,7 +70,10 @@ async function startServer() {
   const appModuleUrl = pathToFileURL(path.join(serverDir, 'src', 'app.js')).href;
   const { default: expressApp } = await import(appModuleUrl);
 
-  await new Promise((resolve) => expressApp.listen(PORT, resolve));
+  await new Promise((resolve, reject) => {
+    const server = expressApp.listen(PORT, resolve);
+    server.on('error', reject);
+  });
 }
 
 function createWindow() {
@@ -80,11 +86,21 @@ function createWindow() {
       nodeIntegration: false,
     },
   });
+  win.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error('Page failed to load:', errorCode, errorDescription);
+  });
   win.loadURL(`http://localhost:${PORT}`);
 }
 
 app.whenReady().then(async () => {
-  await startServer();
+  try {
+    await startServer();
+  } catch (err) {
+    console.error('Failed to start embedded server:', err);
+    dialog.showErrorBox('Drive failed to start', String((err && err.stack) || err));
+    app.quit();
+    return;
+  }
   createWindow();
   setupAutoUpdate();
 

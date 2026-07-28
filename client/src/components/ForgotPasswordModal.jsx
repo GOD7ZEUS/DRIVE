@@ -5,6 +5,7 @@ export default function ForgotPasswordModal({ onClose }) {
   const [step, setStep] = useState('email');
   const [email, setEmail] = useState('');
   const [question, setQuestion] = useState('');
+  const [hasQuestion, setHasQuestion] = useState(true);
   const [answer, setAnswer] = useState('');
   const [otp, setOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -18,11 +19,8 @@ export default function ForgotPasswordModal({ onClose }) {
     setSubmitting(true);
     try {
       const res = await api.getSecurityQuestion(email);
-      if (!res.question) {
-        setError('No recovery info is set up for this account. Contact your Super Admin for help.');
-        return;
-      }
-      setQuestion(res.question);
+      setQuestion(res.question || '');
+      setHasQuestion(!!res.question);
       setStep('answer');
     } catch (err) {
       setError(err.message);
@@ -37,6 +35,19 @@ export default function ForgotPasswordModal({ onClose }) {
     setSubmitting(true);
     try {
       await api.verifySecurityAnswer(email, answer);
+      setStep('otp');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleSendOtpDirect() {
+    setError('');
+    setSubmitting(true);
+    try {
+      await api.sendResetOtpDirect(email);
       setStep('otp');
     } catch (err) {
       setError(err.message);
@@ -88,7 +99,7 @@ export default function ForgotPasswordModal({ onClose }) {
           </form>
         )}
 
-        {step === 'answer' && (
+        {step === 'answer' && hasQuestion && (
           <form className="form-grid" onSubmit={handleAnswerSubmit}>
             <p className="muted">Answer your security question.</p>
             <label>
@@ -105,12 +116,39 @@ export default function ForgotPasswordModal({ onClose }) {
                 Back
               </button>
             </div>
+            <a
+              href="#"
+              className="muted"
+              onClick={(e) => {
+                e.preventDefault();
+                if (!submitting) handleSendOtpDirect();
+              }}
+            >
+              Forgot the answer too? Try another way
+            </a>
           </form>
+        )}
+
+        {step === 'answer' && !hasQuestion && (
+          <div className="form-grid">
+            <p className="muted">
+              No security question is set up for this account. We can still email you a reset code instead.
+            </p>
+            {error && <p className="error">{error}</p>}
+            <div className="row">
+              <button type="button" className="primary" onClick={handleSendOtpDirect} disabled={submitting}>
+                {submitting ? 'Sending…' : 'Send Code'}
+              </button>
+              <button type="button" onClick={() => setStep('email')}>
+                Back
+              </button>
+            </div>
+          </div>
         )}
 
         {step === 'otp' && (
           <form className="form-grid" onSubmit={handleReset}>
-            <p className="muted">Verified — a code was emailed to {email}. Enter it below with a new password.</p>
+            <p className="muted">A code was emailed to {email}. Enter it below with a new password.</p>
             <label>
               Reset Code
               <br />

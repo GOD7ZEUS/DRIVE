@@ -204,8 +204,7 @@ router.post('/forgot-password/question', authLimiter, async (req, res, next) => 
   }
 });
 
-// Step 2: verify the security answer. On success, emails an OTP — the last
-// step in recovery, not an alternate bypass of the question step.
+// Step 2: verify the security answer. On success, emails an OTP.
 router.post('/forgot-password/verify-answer', authLimiter, async (req, res, next) => {
   try {
     if (!resend) {
@@ -226,6 +225,32 @@ router.post('/forgot-password/verify-answer', authLimiter, async (req, res, next
 
     await sendOtp(user);
     res.json({ message: 'A reset code has been sent to your email.' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// "Try another way": skip the security question and email an OTP directly,
+// for someone who can't answer it. Same response regardless of whether the
+// account exists, so this can't be used to probe which emails have accounts.
+router.post('/forgot-password/send-otp', authLimiter, async (req, res, next) => {
+  try {
+    if (!resend) {
+      return res.status(503).json({ error: 'password reset by email is not configured on this server' });
+    }
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'email is required' });
+    }
+
+    const user = await get('SELECT * FROM users WHERE email = ?', email.toLowerCase());
+    if (user) {
+      if (user.reset_otp_locked_until && new Date(user.reset_otp_locked_until).getTime() > Date.now()) {
+        return lockedResponse(res, user);
+      }
+      await sendOtp(user);
+    }
+    res.json({ message: 'If that email has an account, a reset code has been sent.' });
   } catch (err) {
     next(err);
   }

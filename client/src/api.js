@@ -63,6 +63,8 @@ export const api = {
     request('/auth/forgot-password/question', { method: 'POST', body: JSON.stringify({ email }) }),
   verifySecurityAnswer: (email, answer) =>
     request('/auth/forgot-password/verify-answer', { method: 'POST', body: JSON.stringify({ email, answer }) }),
+  sendResetOtpDirect: (email) =>
+    request('/auth/forgot-password/send-otp', { method: 'POST', body: JSON.stringify({ email }) }),
   resetPassword: (email, otp, newPassword) =>
     request('/auth/reset-password', { method: 'POST', body: JSON.stringify({ email, otp, newPassword }) }),
 
