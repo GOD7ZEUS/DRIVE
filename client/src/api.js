@@ -77,7 +77,10 @@ export const api = {
   deleteUser: (id) => request(`/users/${id}`, { method: 'DELETE' }),
 
   getCompanies: () => request('/companies'),
+  createCompany: (name) => request('/companies', { method: 'POST', body: JSON.stringify({ name }) }),
   getCompanyDepartments: (companyId) => request(`/companies/${companyId}/departments`),
+  createDepartment: (companyId, name) =>
+    request(`/companies/${companyId}/departments`, { method: 'POST', body: JSON.stringify({ name }) }),
 
   chat: (messages) => request('/chat', { method: 'POST', body: JSON.stringify({ messages }) }),
 };

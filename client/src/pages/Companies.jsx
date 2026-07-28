@@ -10,11 +10,24 @@ export default function Companies() {
   const [departments, setDepartments] = useState(null);
   const [departmentsError, setDepartmentsError] = useState('');
 
-  useEffect(() => {
+  const [showCompanyForm, setShowCompanyForm] = useState(false);
+  const [companyName, setCompanyName] = useState('');
+  const [companyError, setCompanyError] = useState('');
+  const [submittingCompany, setSubmittingCompany] = useState(false);
+
+  const [showDeptForm, setShowDeptForm] = useState(false);
+  const [deptName, setDeptName] = useState('');
+  const [deptError, setDeptError] = useState('');
+  const [submittingDept, setSubmittingDept] = useState(false);
+
+  function load() {
     api.getCompanies().then(setCompanies).catch((e) => setError(e.message));
-  }, []);
+  }
+
+  useEffect(load, []);
 
   async function toggleCompany(company) {
+    setShowDeptForm(false);
     if (expandedId === company.id) {
       setExpandedId(null);
       setDepartments(null);
@@ -35,18 +48,79 @@ export default function Companies() {
     navigate(`/projects?companyId=${company.id}&departmentId=${department.id}`);
   }
 
+  async function handleAddCompany(e) {
+    e.preventDefault();
+    if (!companyName.trim()) return;
+    setSubmittingCompany(true);
+    setCompanyError('');
+    try {
+      await api.createCompany(companyName);
+      setCompanyName('');
+      setShowCompanyForm(false);
+      load();
+    } catch (e) {
+      setCompanyError(e.message);
+    } finally {
+      setSubmittingCompany(false);
+    }
+  }
+
+  async function handleAddDepartment(e, company) {
+    e.preventDefault();
+    if (!deptName.trim()) return;
+    setSubmittingDept(true);
+    setDeptError('');
+    try {
+      await api.createDepartment(company.id, deptName);
+      setDeptName('');
+      setShowDeptForm(false);
+      load();
+      const rows = await api.getCompanyDepartments(company.id);
+      setDepartments(rows);
+    } catch (e) {
+      setDeptError(e.message);
+    } finally {
+      setSubmittingDept(false);
+    }
+  }
+
   return (
     <div>
-      <h1>Companies</h1>
+      <div className="row-between">
+        <h1>Companies</h1>
+        <button
+          className="primary"
+          onClick={() => {
+            setShowCompanyForm((s) => !s);
+            setCompanyError('');
+          }}
+        >
+          {showCompanyForm ? 'Cancel' : 'New Company'}
+        </button>
+      </div>
       <p className="muted" style={{ marginBottom: 16 }}>
-        Pick a company, then a department, to jump straight to its projects.
+        Add companies and departments here first — Projects and Users then just pick from what already exists.
       </p>
+
+      {showCompanyForm && (
+        <form className="panel inline-form" onSubmit={handleAddCompany} style={{ marginBottom: 20 }}>
+          <input
+            placeholder="Company name"
+            value={companyName}
+            onChange={(e) => setCompanyName(e.target.value)}
+            required
+            autoFocus
+          />
+          <button type="submit" className="primary" disabled={submittingCompany}>
+            {submittingCompany ? 'Adding…' : 'Add'}
+          </button>
+          {companyError && <p className="error">{companyError}</p>}
+        </form>
+      )}
 
       {error && <p className="error">{error}</p>}
       {!companies && !error && <p className="muted">Loading…</p>}
-      {companies && companies.length === 0 && (
-        <p className="muted">No companies yet — one gets created automatically the first time you add an account or project.</p>
-      )}
+      {companies && companies.length === 0 && <p className="muted">No companies yet — add one above.</p>}
 
       <div className="list">
         {companies?.map((c) => (
@@ -66,6 +140,40 @@ export default function Companies() {
 
             {expandedId === c.id && (
               <div className="panel" style={{ marginTop: 8, marginBottom: 8 }}>
+                <div className="row-between">
+                  <strong>Departments</strong>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowDeptForm((s) => !s);
+                      setDeptError('');
+                    }}
+                  >
+                    {showDeptForm ? 'Cancel' : 'Add Department'}
+                  </button>
+                </div>
+
+                {showDeptForm && (
+                  <form
+                    className="inline-form"
+                    onSubmit={(e) => handleAddDepartment(e, c)}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ margin: '12px 0' }}
+                  >
+                    <input
+                      placeholder="Department name"
+                      value={deptName}
+                      onChange={(e) => setDeptName(e.target.value)}
+                      required
+                      autoFocus
+                    />
+                    <button type="submit" className="primary" disabled={submittingDept}>
+                      {submittingDept ? 'Adding…' : 'Add'}
+                    </button>
+                    {deptError && <p className="error">{deptError}</p>}
+                  </form>
+                )}
+
                 {departmentsError && <p className="error">{departmentsError}</p>}
                 {!departments && !departmentsError && <p className="muted">Loading departments…</p>}
                 {departments && departments.length === 0 && <p className="muted">No departments yet.</p>}
