@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../auth.jsx';
+import ForgotPasswordModal from '../components/ForgotPasswordModal.jsx';
 
 export default function Login() {
   const { needsSetup, login, setup } = useAuth();
@@ -8,6 +9,7 @@ export default function Login() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -80,7 +82,13 @@ export default function Login() {
         <button type="submit" className="primary" disabled={submitting}>
           {submitting ? 'Please wait…' : needsSetup ? 'Create Super Admin' : 'Sign in'}
         </button>
+        {!needsSetup && (
+          <a href="#" className="muted" onClick={(e) => { e.preventDefault(); setShowForgotPassword(true); }}>
+            Forgot password?
+          </a>
+        )}
       </form>
+      {showForgotPassword && <ForgotPasswordModal onClose={() => setShowForgotPassword(false)} />}
     </div>
   );
 }

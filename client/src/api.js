@@ -57,6 +57,9 @@ export const api = {
   getMe: () => request('/auth/me'),
   changePassword: (currentPassword, newPassword) =>
     request('/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }),
+  forgotPassword: (email) => request('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+  resetPassword: (email, otp, newPassword) =>
+    request('/auth/reset-password', { method: 'POST', body: JSON.stringify({ email, otp, newPassword }) }),
 
   getUsers: () => request('/users'),
   createUser: (data) => request('/users', { method: 'POST', body: JSON.stringify(data) }),
