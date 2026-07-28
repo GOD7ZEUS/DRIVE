@@ -8,13 +8,14 @@ import TaskDetail from './pages/TaskDetail.jsx';
 import Users from './pages/Users.jsx';
 import Companies from './pages/Companies.jsx';
 import Login from './pages/Login.jsx';
+import LoadingScreen from './components/LoadingScreen.jsx';
 
 export default function App() {
   const { user, loading, logout } = useAuth();
   const [theme, toggleTheme] = useTheme();
   const location = useLocation();
 
-  if (loading) return null;
+  if (loading) return <LoadingScreen />;
   if (!user) return <Login />;
 
   return (
