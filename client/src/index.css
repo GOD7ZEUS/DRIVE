@@ -607,11 +607,12 @@ form.inline-form {
   font-variant-numeric: tabular-nums;
 }
 
-.loading-screen-hint {
-  font-size: 13px;
-  color: var(--text);
-  opacity: 0.7;
-  max-width: 280px;
+.loading-screen-icon {
+  width: 36px;
+  height: auto;
+  margin-top: 4px;
+  animation: loading-pulse 1.8s ease-in-out infinite;
+  animation-delay: 0.3s;
 }
 
 @keyframes loading-pulse {

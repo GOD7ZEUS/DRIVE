@@ -24,7 +24,7 @@ export default function LoadingScreen() {
         <div className="loading-bar-fill" style={{ width: `${percent}%` }} />
       </div>
       <div className="loading-screen-percent">{percent}%</div>
-      <div className="loading-screen-hint">Waking up the server — first load can take up to a minute</div>
+      <img src="/favicon.svg" alt="" className="loading-screen-icon" />
     </div>
   );
 }
