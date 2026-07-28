@@ -12,6 +12,7 @@ import projectsRouter from './routes/projects.js';
 import milestonesRouter from './routes/milestones.js';
 import tasksRouter from './routes/tasks.js';
 import dashboardRouter from './routes/dashboard.js';
+import chatRouter from './routes/chat.js';
 import { requireAuth, requireRole } from './middleware/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -46,6 +47,7 @@ app.use('/api/projects', requireAuth, projectsRouter);
 app.use('/api/milestones', requireAuth, milestonesRouter);
 app.use('/api/tasks', requireAuth, tasksRouter);
 app.use('/api/dashboard', requireAuth, dashboardRouter);
+app.use('/api/chat', requireAuth, chatRouter);
 
 if (process.env.NODE_ENV === 'production') {
   const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');

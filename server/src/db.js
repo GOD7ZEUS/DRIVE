@@ -126,6 +126,11 @@ await ensureColumn('projects', 'responsible_person', 'TEXT');
 await ensureColumn('projects', 'deadline', 'TEXT');
 await ensureColumn('users', 'reset_otp_hash', 'TEXT');
 await ensureColumn('users', 'reset_otp_expires', 'TEXT');
+await ensureColumn('users', 'reset_otp_attempts', 'INTEGER NOT NULL DEFAULT 0');
+await ensureColumn('users', 'reset_otp_locked_until', 'TEXT');
+await ensureColumn('users', 'is_master', 'INTEGER NOT NULL DEFAULT 0');
+await ensureColumn('users', 'security_question', 'TEXT');
+await ensureColumn('users', 'security_answer_hash', 'TEXT');
 
 export async function getOrCreateCompany(name) {
   const trimmed = name.trim();
@@ -168,4 +173,26 @@ if (superAdminCount === 0 && process.env.SUPER_ADMIN_EMAIL && process.env.SUPER_
     'super_admin'
   );
   console.log(`Seeded super admin account: ${email}`);
+}
+
+// The master account is a super_admin with an extra flag that gates who can
+// create/edit/delete other super_admin accounts (see users.js). Seeded from
+// env vars the same way as the initial super admin — idempotent, so it's
+// safe to leave these vars set permanently (it only acts once per email).
+if (process.env.MASTER_EMAIL && process.env.MASTER_PASSWORD) {
+  const masterEmail = process.env.MASTER_EMAIL.toLowerCase();
+  const existingMaster = await get('SELECT * FROM users WHERE email = ?', masterEmail);
+  if (!existingMaster) {
+    const passwordHash = bcrypt.hashSync(process.env.MASTER_PASSWORD, 10);
+    await run(
+      'INSERT INTO users (email, password_hash, role, is_master) VALUES (?, ?, ?, 1)',
+      masterEmail,
+      passwordHash,
+      'super_admin'
+    );
+    console.log(`Seeded master account: ${masterEmail}`);
+  } else if (!existingMaster.is_master) {
+    await run("UPDATE users SET is_master = 1, role = 'super_admin' WHERE id = ?", existingMaster.id);
+    console.log(`Promoted existing account to master: ${masterEmail}`);
+  }
 }

@@ -4,19 +4,40 @@ import { api } from '../api.js';
 export default function ForgotPasswordModal({ onClose }) {
   const [step, setStep] = useState('email');
   const [email, setEmail] = useState('');
+  const [question, setQuestion] = useState('');
+  const [answer, setAnswer] = useState('');
   const [otp, setOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  async function handleSendCode(e) {
+  async function handleEmailSubmit(e) {
     e.preventDefault();
     setError('');
     setSubmitting(true);
     try {
-      await api.forgotPassword(email);
-      setStep('reset');
+      const res = await api.getSecurityQuestion(email);
+      if (!res.question) {
+        setError('No recovery info is set up for this account. Contact your Super Admin for help.');
+        return;
+      }
+      setQuestion(res.question);
+      setStep('answer');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleAnswerSubmit(e) {
+    e.preventDefault();
+    setError('');
+    setSubmitting(true);
+    try {
+      await api.verifySecurityAnswer(email, answer);
+      setStep('otp');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -53,8 +74,8 @@ export default function ForgotPasswordModal({ onClose }) {
         </div>
 
         {step === 'email' && (
-          <form className="form-grid" onSubmit={handleSendCode}>
-            <p className="muted">Enter your account email and we'll send a reset code.</p>
+          <form className="form-grid" onSubmit={handleEmailSubmit}>
+            <p className="muted">Enter your account email to start recovery.</p>
             <label>
               Email
               <br />
@@ -62,14 +83,34 @@ export default function ForgotPasswordModal({ onClose }) {
             </label>
             {error && <p className="error">{error}</p>}
             <button type="submit" className="primary" disabled={submitting}>
-              {submitting ? 'Sending…' : 'Send Code'}
+              {submitting ? 'Checking…' : 'Continue'}
             </button>
           </form>
         )}
 
-        {step === 'reset' && (
+        {step === 'answer' && (
+          <form className="form-grid" onSubmit={handleAnswerSubmit}>
+            <p className="muted">Answer your security question.</p>
+            <label>
+              {question}
+              <br />
+              <input value={answer} onChange={(e) => setAnswer(e.target.value)} required autoFocus />
+            </label>
+            {error && <p className="error">{error}</p>}
+            <div className="row">
+              <button type="submit" className="primary" disabled={submitting}>
+                {submitting ? 'Verifying…' : 'Verify'}
+              </button>
+              <button type="button" onClick={() => setStep('email')}>
+                Back
+              </button>
+            </div>
+          </form>
+        )}
+
+        {step === 'otp' && (
           <form className="form-grid" onSubmit={handleReset}>
-            <p className="muted">Enter the code sent to {email}, plus a new password.</p>
+            <p className="muted">Verified — a code was emailed to {email}. Enter it below with a new password.</p>
             <label>
               Reset Code
               <br />
@@ -98,14 +139,9 @@ export default function ForgotPasswordModal({ onClose }) {
               />
             </label>
             {error && <p className="error">{error}</p>}
-            <div className="row">
-              <button type="submit" className="primary" disabled={submitting}>
-                {submitting ? 'Resetting…' : 'Reset Password'}
-              </button>
-              <button type="button" onClick={() => setStep('email')}>
-                Back
-              </button>
-            </div>
+            <button type="submit" className="primary" disabled={submitting}>
+              {submitting ? 'Resetting…' : 'Reset Password'}
+            </button>
           </form>
         )}
 

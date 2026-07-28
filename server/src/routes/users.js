@@ -5,10 +5,16 @@ import { get, all, run, getOrCreateCompany, getOrCreateDepartment } from '../db.
 const router = Router();
 const ASSIGNABLE_ROLES = ['admin', 'view'];
 
+// Only the master account may create, edit, or delete other super_admin
+// accounts — a regular super_admin (including the account itself) cannot.
+function allowedRoles(req) {
+  return req.user.is_master ? [...ASSIGNABLE_ROLES, 'super_admin'] : ASSIGNABLE_ROLES;
+}
+
 router.get('/', async (req, res, next) => {
   try {
     const users = await all(
-      'SELECT id, email, role, company, department, company_id, department_id, created_at FROM users ORDER BY created_at ASC'
+      'SELECT id, email, role, company, department, company_id, department_id, is_master, created_at FROM users ORDER BY created_at ASC'
     );
     res.json(users);
   } catch (err) {
@@ -22,14 +28,11 @@ router.post('/', async (req, res, next) => {
     if (!email || !password || !role) {
       return res.status(400).json({ error: 'email, password, and role are required' });
     }
-    if (!ASSIGNABLE_ROLES.includes(role)) {
-      return res.status(400).json({ error: `role must be one of ${ASSIGNABLE_ROLES.join(', ')}` });
+    if (!allowedRoles(req).includes(role)) {
+      return res.status(400).json({ error: `role must be one of ${allowedRoles(req).join(', ')}` });
     }
     if (password.length < 6) {
       return res.status(400).json({ error: 'password must be at least 6 characters' });
-    }
-    if (!company || !company.trim() || !department || !department.trim()) {
-      return res.status(400).json({ error: 'company and department are required' });
     }
 
     const existing = await get('SELECT id FROM users WHERE email = ?', email.toLowerCase());
@@ -37,8 +40,17 @@ router.post('/', async (req, res, next) => {
       return res.status(409).json({ error: 'a user with that email already exists' });
     }
 
-    const companyRow = await getOrCreateCompany(company);
-    const departmentRow = await getOrCreateDepartment(companyRow.id, department);
+    // Super admins aren't scoped to a company/department (they see everything),
+    // so unlike admin/view accounts, company+department aren't required here.
+    let companyRow = { id: null, name: null };
+    let departmentRow = { id: null, name: null };
+    if (role !== 'super_admin') {
+      if (!company || !company.trim() || !department || !department.trim()) {
+        return res.status(400).json({ error: 'company and department are required' });
+      }
+      companyRow = await getOrCreateCompany(company);
+      departmentRow = await getOrCreateDepartment(companyRow.id, department);
+    }
 
     const passwordHash = bcrypt.hashSync(password, 10);
     const result = await run(
@@ -55,7 +67,7 @@ router.post('/', async (req, res, next) => {
 
     res.status(201).json(
       await get(
-        'SELECT id, email, role, company, department, company_id, department_id, created_at FROM users WHERE id = ?',
+        'SELECT id, email, role, company, department, company_id, department_id, is_master, created_at FROM users WHERE id = ?',
         result.lastInsertRowid
       )
     );
@@ -68,13 +80,16 @@ router.patch('/:id', async (req, res, next) => {
   try {
     const user = await get('SELECT * FROM users WHERE id = ?', req.params.id);
     if (!user) return res.status(404).json({ error: 'user not found' });
-    if (user.role === 'super_admin') {
-      return res.status(403).json({ error: 'cannot modify the super admin account' });
+    if ((user.role === 'super_admin' || user.is_master) && !req.user.is_master) {
+      return res.status(403).json({ error: 'only the master account can modify a super admin account' });
+    }
+    if (user.is_master) {
+      return res.status(403).json({ error: 'the master account cannot be modified from here' });
     }
 
     const { role, password } = req.body;
-    if (role !== undefined && !ASSIGNABLE_ROLES.includes(role)) {
-      return res.status(400).json({ error: `role must be one of ${ASSIGNABLE_ROLES.join(', ')}` });
+    if (role !== undefined && !allowedRoles(req).includes(role)) {
+      return res.status(400).json({ error: `role must be one of ${allowedRoles(req).join(', ')}` });
     }
     if (password !== undefined && password.length < 6) {
       return res.status(400).json({ error: 'password must be at least 6 characters' });
@@ -89,7 +104,7 @@ router.patch('/:id', async (req, res, next) => {
 
     res.json(
       await get(
-        'SELECT id, email, role, company, department, company_id, department_id, created_at FROM users WHERE id = ?',
+        'SELECT id, email, role, company, department, company_id, department_id, is_master, created_at FROM users WHERE id = ?',
         req.params.id
       )
     );
@@ -102,8 +117,11 @@ router.delete('/:id', async (req, res, next) => {
   try {
     const user = await get('SELECT * FROM users WHERE id = ?', req.params.id);
     if (!user) return res.status(404).json({ error: 'user not found' });
-    if (user.role === 'super_admin') {
-      return res.status(403).json({ error: 'cannot delete the super admin account' });
+    if (user.is_master) {
+      return res.status(403).json({ error: 'the master account cannot be deleted from here' });
+    }
+    if (user.role === 'super_admin' && !req.user.is_master) {
+      return res.status(403).json({ error: 'only the master account can delete a super admin account' });
     }
     await run('DELETE FROM users WHERE id = ?', req.params.id);
     res.status(204).end();

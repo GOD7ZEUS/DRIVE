@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import { useAuth } from '../auth.jsx';
 import CompanyDepartmentFields from '../components/CompanyDepartmentFields.jsx';
 
-const ROLES = ['admin', 'view'];
 const ROLE_LABELS = { super_admin: 'Super Admin', admin: 'Admin', view: 'View' };
 
 export default function Users() {
+  const { user: currentUser } = useAuth();
+  const isMaster = !!currentUser.is_master;
+  const roles = isMaster ? ['admin', 'view', 'super_admin'] : ['admin', 'view'];
+
   const [users, setUsers] = useState(null);
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -79,22 +83,28 @@ export default function Users() {
             Role
             <br />
             <select value={role} onChange={(e) => setRole(e.target.value)}>
-              {ROLES.map((r) => (
+              {roles.map((r) => (
                 <option key={r} value={r}>
                   {ROLE_LABELS[r]}
                 </option>
               ))}
             </select>
           </label>
-          <CompanyDepartmentFields
-            company={company}
-            department={department}
-            onCompanyChange={setCompany}
-            onDepartmentChange={setDepartment}
-          />
-          <p className="muted">
-            This account will only see projects tagged with this Company + Department.
-          </p>
+          {role === 'super_admin' ? (
+            <p className="muted">Super Admin accounts aren't tied to a company/department — they see everything.</p>
+          ) : (
+            <>
+              <CompanyDepartmentFields
+                company={company}
+                department={department}
+                onCompanyChange={setCompany}
+                onDepartmentChange={setDepartment}
+              />
+              <p className="muted">
+                This account will only see projects tagged with this Company + Department.
+              </p>
+            </>
+          )}
           {error && <p className="error">{error}</p>}
           <div>
             <button type="submit" className="primary" disabled={submitting}>
@@ -111,7 +121,9 @@ export default function Users() {
         {users?.map((u) => (
           <div key={u.id} className="list-item">
             <div>
-              <div className="title">{u.email}</div>
+              <div className="title">
+                {u.email} {u.is_master && <span className="key-tag">MASTER</span>}
+              </div>
               <div className="muted">
                 {ROLE_LABELS[u.role]}
                 {u.company && (
@@ -123,7 +135,7 @@ export default function Users() {
                 )}
               </div>
             </div>
-            {u.role !== 'super_admin' && (
+            {!u.is_master && (u.role !== 'super_admin' || isMaster) && (
               <button className="danger" onClick={() => handleDelete(u)}>
                 Delete
               </button>

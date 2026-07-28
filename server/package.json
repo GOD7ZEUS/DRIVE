@@ -10,6 +10,7 @@
     "start:prod": "cross-env NODE_ENV=production node src/index.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
     "@libsql/client": "^0.17.4",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",

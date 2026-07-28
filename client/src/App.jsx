@@ -12,16 +12,22 @@ import Login from './pages/Login.jsx';
 import LoadingScreen from './components/LoadingScreen.jsx';
 import ChangePasswordModal from './components/ChangePasswordModal.jsx';
 import AccountDrawer from './components/AccountDrawer.jsx';
+import SecurityQuestionModal from './components/SecurityQuestionModal.jsx';
+import ChatWidget from './components/ChatWidget.jsx';
 
 export default function App() {
-  const { user, loading, logout } = useAuth();
+  const { user, loading, logout, refreshUser } = useAuth();
   const [theme, toggleTheme] = useTheme();
   const location = useLocation();
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showDrawer, setShowDrawer] = useState(false);
+  const [showSecurityQuestion, setShowSecurityQuestion] = useState(false);
+  const [securityPromptDismissed, setSecurityPromptDismissed] = useState(false);
 
   if (loading) return <LoadingScreen />;
   if (!user) return <Login />;
+
+  const needsSecurityQuestion = !user.has_security_question && !securityPromptDismissed;
 
   return (
     <div className="app">
@@ -63,10 +69,23 @@ export default function App() {
             setShowDrawer(false);
             setShowChangePassword(true);
           }}
+          onOpenSecurityQuestion={() => {
+            setShowDrawer(false);
+            setShowSecurityQuestion(true);
+          }}
           onLogout={logout}
         />
       )}
       {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} />}
+      {(showSecurityQuestion || needsSecurityQuestion) && (
+        <SecurityQuestionModal
+          onClose={() => {
+            setShowSecurityQuestion(false);
+            setSecurityPromptDismissed(true);
+          }}
+          onSaved={refreshUser}
+        />
+      )}
       <main className="content" key={location.pathname}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
@@ -77,6 +96,7 @@ export default function App() {
           {user.role === 'super_admin' && <Route path="/users" element={<Users />} />}
         </Routes>
       </main>
+      <ChatWidget />
     </div>
   );
 }
