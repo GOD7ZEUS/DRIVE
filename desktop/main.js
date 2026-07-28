@@ -1,4 +1,5 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
@@ -6,6 +7,42 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = 3001;
+const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
+
+// Auto-update only makes sense for a real packaged install (electron-updater
+// has nowhere to check against / nothing to replace in dev). Errors are just
+// logged, not surfaced to the user — a failed check (e.g. no internet) should
+// never interrupt using the app.
+function setupAutoUpdate() {
+  if (!app.isPackaged) return;
+
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('error', (err) => {
+    console.error('Auto-update check failed:', err.message);
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    dialog
+      .showMessageBox({
+        type: 'info',
+        title: 'Update ready',
+        message: `Drive ${info.version} has been downloaded.`,
+        detail: 'Restart now to install it, or it will install automatically the next time you close the app.',
+        buttons: ['Restart Now', 'Later'],
+        defaultId: 0,
+        cancelId: 1,
+      })
+      .then(({ response }) => {
+        if (response === 0) autoUpdater.quitAndInstall();
+      });
+  });
+
+  autoUpdater.checkForUpdates().catch((err) => console.error('Update check failed:', err.message));
+  setInterval(() => {
+    autoUpdater.checkForUpdates().catch((err) => console.error('Update check failed:', err.message));
+  }, UPDATE_CHECK_INTERVAL_MS);
+}
 
 const serverDir = app.isPackaged
   ? path.join(process.resourcesPath, 'server')
@@ -49,6 +86,7 @@ function createWindow() {
 app.whenReady().then(async () => {
   await startServer();
   createWindow();
+  setupAutoUpdate();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
