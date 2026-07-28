@@ -61,8 +61,11 @@ export const api = {
     request('/auth/security-question', { method: 'POST', body: JSON.stringify({ question, answer }) }),
   getSecurityQuestion: (email) =>
     request('/auth/forgot-password/question', { method: 'POST', body: JSON.stringify({ email }) }),
-  verifySecurityAnswer: (email, answer) =>
-    request('/auth/forgot-password/verify-answer', { method: 'POST', body: JSON.stringify({ email, answer }) }),
+  resetWithSecurityAnswer: (email, answer, newPassword) =>
+    request('/auth/forgot-password/verify-answer', {
+      method: 'POST',
+      body: JSON.stringify({ email, answer, newPassword }),
+    }),
   sendResetOtpDirect: (email) =>
     request('/auth/forgot-password/send-otp', { method: 'POST', body: JSON.stringify({ email }) }),
   resetPassword: (email, otp, newPassword) =>

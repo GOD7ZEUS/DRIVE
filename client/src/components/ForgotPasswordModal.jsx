@@ -7,6 +7,8 @@ export default function ForgotPasswordModal({ onClose }) {
   const [question, setQuestion] = useState('');
   const [hasQuestion, setHasQuestion] = useState(true);
   const [answer, setAnswer] = useState('');
+  const [answerPassword, setAnswerPassword] = useState('');
+  const [answerConfirmPassword, setAnswerConfirmPassword] = useState('');
   const [otp, setOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -32,10 +34,14 @@ export default function ForgotPasswordModal({ onClose }) {
   async function handleAnswerSubmit(e) {
     e.preventDefault();
     setError('');
+    if (answerPassword !== answerConfirmPassword) {
+      setError('New passwords do not match');
+      return;
+    }
     setSubmitting(true);
     try {
-      await api.verifySecurityAnswer(email, answer);
-      setStep('otp');
+      await api.resetWithSecurityAnswer(email, answer, answerPassword);
+      setStep('done');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -101,16 +107,38 @@ export default function ForgotPasswordModal({ onClose }) {
 
         {step === 'answer' && hasQuestion && (
           <form className="form-grid" onSubmit={handleAnswerSubmit}>
-            <p className="muted">Answer your security question.</p>
+            <p className="muted">Answer your security question and set a new password — no code needed.</p>
             <label>
               {question}
               <br />
               <input value={answer} onChange={(e) => setAnswer(e.target.value)} required autoFocus />
             </label>
+            <label>
+              New Password
+              <br />
+              <input
+                type="password"
+                value={answerPassword}
+                onChange={(e) => setAnswerPassword(e.target.value)}
+                required
+                minLength={6}
+              />
+            </label>
+            <label>
+              Confirm New Password
+              <br />
+              <input
+                type="password"
+                value={answerConfirmPassword}
+                onChange={(e) => setAnswerConfirmPassword(e.target.value)}
+                required
+                minLength={6}
+              />
+            </label>
             {error && <p className="error">{error}</p>}
             <div className="row">
               <button type="submit" className="primary" disabled={submitting}>
-                {submitting ? 'Verifying…' : 'Verify'}
+                {submitting ? 'Resetting…' : 'Reset Password'}
               </button>
               <button type="button" onClick={() => setStep('email')}>
                 Back

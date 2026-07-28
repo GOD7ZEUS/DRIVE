@@ -1,12 +1,4 @@
-export default function AccountDrawer({
-  user,
-  theme,
-  toggleTheme,
-  onClose,
-  onOpenChangePassword,
-  onOpenSecurityQuestion,
-  onLogout,
-}) {
+export default function AccountDrawer({ user, theme, toggleTheme, onClose, onOpenChangePassword, onLogout }) {
   const roleLabel = user.role === 'super_admin' ? 'Super Admin' : user.role === 'admin' ? 'Admin' : 'View';
 
   return (
@@ -29,9 +21,6 @@ export default function AccountDrawer({
         <div className="drawer-actions">
           <button onClick={toggleTheme}>{theme === 'dark' ? '☀️ Light Mode' : '🌙 Dark Mode'}</button>
           <button onClick={onOpenChangePassword}>Change Password</button>
-          <button onClick={onOpenSecurityQuestion}>
-            {user.has_security_question ? 'Update Security Question' : 'Set Security Question'}
-          </button>
           <button className="danger" onClick={onLogout}>
             Log out
           </button>

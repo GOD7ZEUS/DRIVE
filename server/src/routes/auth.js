@@ -204,27 +204,35 @@ router.post('/forgot-password/question', authLimiter, async (req, res, next) => 
   }
 });
 
-// Step 2: verify the security answer. On success, emails an OTP.
+// Step 2: answer the security question and set a new password in the same
+// request. A correct answer is sufficient on its own — no emailed code
+// needed. (The emailed-OTP path below is only for someone who can't answer
+// the question at all.)
 router.post('/forgot-password/verify-answer', authLimiter, async (req, res, next) => {
   try {
-    if (!resend) {
-      return res.status(503).json({ error: 'password reset by email is not configured on this server' });
+    const { email, answer, newPassword } = req.body;
+    if (!email || !answer || !newPassword) {
+      return res.status(400).json({ error: 'email, answer, and newPassword are required' });
     }
-    const { email, answer } = req.body;
-    if (!email || !answer) {
-      return res.status(400).json({ error: 'email and answer are required' });
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'new password must be at least 6 characters' });
     }
 
     const user = await get('SELECT * FROM users WHERE email = ?', email.toLowerCase());
     const invalid = () => res.status(400).json({ error: 'incorrect answer' });
     if (!user || !user.security_answer_hash) return invalid();
-    if (user.reset_otp_locked_until && new Date(user.reset_otp_locked_until).getTime() > Date.now()) {
-      return lockedResponse(res, user);
-    }
     if (!bcrypt.compareSync(answer.trim().toLowerCase(), user.security_answer_hash)) return invalid();
 
-    await sendOtp(user);
-    res.json({ message: 'A reset code has been sent to your email.' });
+    const passwordHash = bcrypt.hashSync(newPassword, 10);
+    await run(
+      `UPDATE users SET
+        password_hash = ?, reset_otp_hash = NULL, reset_otp_expires = NULL,
+        reset_otp_attempts = 0, reset_otp_locked_until = NULL
+       WHERE id = ?`,
+      passwordHash,
+      user.id
+    );
+    res.status(204).end();
   } catch (err) {
     next(err);
   }

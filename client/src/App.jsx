@@ -21,13 +21,11 @@ export default function App() {
   const location = useLocation();
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showDrawer, setShowDrawer] = useState(false);
-  const [showSecurityQuestion, setShowSecurityQuestion] = useState(false);
-  const [securityPromptDismissed, setSecurityPromptDismissed] = useState(false);
 
   if (loading) return <LoadingScreen />;
   if (!user) return <Login />;
 
-  const needsSecurityQuestion = !user.has_security_question && !securityPromptDismissed;
+  const needsSecurityQuestion = !user.has_security_question;
 
   return (
     <div className="app">
@@ -69,23 +67,11 @@ export default function App() {
             setShowDrawer(false);
             setShowChangePassword(true);
           }}
-          onOpenSecurityQuestion={() => {
-            setShowDrawer(false);
-            setShowSecurityQuestion(true);
-          }}
           onLogout={logout}
         />
       )}
       {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} />}
-      {(showSecurityQuestion || needsSecurityQuestion) && (
-        <SecurityQuestionModal
-          onClose={() => {
-            setShowSecurityQuestion(false);
-            setSecurityPromptDismissed(true);
-          }}
-          onSaved={refreshUser}
-        />
-      )}
+      {needsSecurityQuestion && <SecurityQuestionModal dismissible={false} onSaved={refreshUser} />}
       <main className="content" key={location.pathname}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
