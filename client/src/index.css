@@ -170,6 +170,12 @@ a {
   color: var(--accent);
 }
 
+.navbar-logo {
+  width: 24px;
+  height: auto;
+  margin-right: 2px;
+}
+
 .tray-button {
   font-size: 19px;
   margin-right: 4px;

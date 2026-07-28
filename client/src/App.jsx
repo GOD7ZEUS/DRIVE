@@ -26,6 +26,7 @@ export default function App() {
   return (
     <div className="app">
       <nav className="navbar">
+        <img src="/favicon.svg" alt="" className="navbar-logo" />
         <button
           type="button"
           className="icon-button tray-button"
