@@ -122,6 +122,8 @@ await ensureColumn('projects', 'company', 'TEXT');
 await ensureColumn('projects', 'department', 'TEXT');
 await ensureColumn('projects', 'company_id', 'INTEGER REFERENCES companies(id)');
 await ensureColumn('projects', 'department_id', 'INTEGER REFERENCES departments(id)');
+await ensureColumn('projects', 'responsible_person', 'TEXT');
+await ensureColumn('projects', 'deadline', 'TEXT');
 
 export async function getOrCreateCompany(name) {
   const trimmed = name.trim();

@@ -18,6 +18,9 @@ export default function ProjectDetail() {
   const [error, setError] = useState('');
   const [taskFilter, setTaskFilter] = useState('all');
 
+  const [responsiblePerson, setResponsiblePerson] = useState('');
+  const [deadline, setDeadline] = useState('');
+
   const [showMilestoneForm, setShowMilestoneForm] = useState(false);
   const [milestoneTitle, setMilestoneTitle] = useState('');
   const [milestoneDue, setMilestoneDue] = useState('');
@@ -34,6 +37,8 @@ export default function ProjectDetail() {
         setProject(p);
         setMilestones(m);
         setTasks(t);
+        setResponsiblePerson(p.responsible_person || '');
+        setDeadline(p.deadline || '');
       })
       .catch((e) => setError(e.message));
   }
@@ -42,6 +47,20 @@ export default function ProjectDetail() {
 
   async function handleStatusChange(status) {
     await api.updateProject(id, { status });
+    load();
+  }
+
+  async function handleResponsiblePersonBlur() {
+    if (responsiblePerson !== (project.responsible_person || '')) {
+      await api.updateProject(id, { responsible_person: responsiblePerson });
+      load();
+    }
+  }
+
+  async function handleDeadlineChange(e) {
+    const value = e.target.value;
+    setDeadline(value);
+    await api.updateProject(id, { deadline: value || null });
     load();
   }
 
@@ -94,35 +113,96 @@ export default function ProjectDetail() {
         <Link to="/projects">← All projects</Link>
       </div>
 
-      {(project.company || project.department) && (
-        <p className="muted" style={{ marginTop: -8 }}>
-          {project.company} <span className="key-tag">Co.{project.company_id}</span> / {project.department}{' '}
-          <span className="key-tag">Dept.{project.department_id}</span>
-        </p>
-      )}
-
       <div className="row-between">
         <h1>{project.name}</h1>
-        <div className="row">
-          {canEdit ? (
-            <select value={project.status} onChange={(e) => handleStatusChange(e.target.value)}>
-              {PROJECT_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <StatusBadge status={project.status} />
-          )}
-          {canEdit && (
-            <button className="danger" onClick={handleDeleteProject}>
-              Delete
-            </button>
-          )}
-        </div>
+        {canEdit && (
+          <button className="danger" onClick={handleDeleteProject}>
+            Delete
+          </button>
+        )}
       </div>
-      {project.description && <p>{project.description}</p>}
+
+      <table className="detail-table">
+        <tbody>
+          <tr>
+            <th>Status</th>
+            <td>
+              {canEdit ? (
+                <select value={project.status} onChange={(e) => handleStatusChange(e.target.value)}>
+                  {PROJECT_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <StatusBadge status={project.status} />
+              )}
+            </td>
+          </tr>
+          <tr>
+            <th>Responsible Person</th>
+            <td>
+              {canEdit ? (
+                <input
+                  value={responsiblePerson}
+                  placeholder="Unassigned"
+                  onChange={(e) => setResponsiblePerson(e.target.value)}
+                  onBlur={handleResponsiblePersonBlur}
+                />
+              ) : (
+                project.responsible_person || <span className="muted">Unassigned</span>
+              )}
+            </td>
+          </tr>
+          <tr>
+            <th>Deadline</th>
+            <td>
+              {canEdit ? (
+                <input type="date" value={deadline} onChange={handleDeadlineChange} />
+              ) : (
+                project.deadline || <span className="muted">No deadline</span>
+              )}
+            </td>
+          </tr>
+          <tr>
+            <th>Company</th>
+            <td>
+              {project.company ? (
+                <>
+                  {project.company} <span className="key-tag">Co.{project.company_id}</span>
+                </>
+              ) : (
+                <span className="muted">—</span>
+              )}
+            </td>
+          </tr>
+          <tr>
+            <th>Department</th>
+            <td>
+              {project.department ? (
+                <>
+                  {project.department} <span className="key-tag">Dept.{project.department_id}</span>
+                </>
+              ) : (
+                <span className="muted">—</span>
+              )}
+            </td>
+          </tr>
+          <tr>
+            <th>Description</th>
+            <td>{project.description || <span className="muted">No description</span>}</td>
+          </tr>
+          <tr>
+            <th>Created</th>
+            <td>{project.created_at}</td>
+          </tr>
+          <tr>
+            <th>Last Updated</th>
+            <td>{project.updated_at}</td>
+          </tr>
+        </tbody>
+      </table>
 
       <div className="section">
         <div className="row-between">

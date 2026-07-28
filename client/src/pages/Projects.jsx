@@ -18,6 +18,8 @@ export default function Projects() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState('planning');
+  const [responsiblePerson, setResponsiblePerson] = useState('');
+  const [deadline, setDeadline] = useState('');
   const [company, setCompany] = useState('');
   const [department, setDepartment] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -67,7 +69,7 @@ export default function Projects() {
     setSubmitting(true);
     setError('');
     try {
-      const payload = { name, description, status };
+      const payload = { name, description, status, responsible_person: responsiblePerson, deadline: deadline || null };
       if (isSuperAdmin) {
         payload.company = company;
         payload.department = department;
@@ -76,6 +78,8 @@ export default function Projects() {
       setName('');
       setDescription('');
       setStatus('planning');
+      setResponsiblePerson('');
+      setDeadline('');
       setCompany('');
       setDepartment('');
       setShowForm(false);
@@ -145,6 +149,20 @@ export default function Projects() {
               ))}
             </select>
           </label>
+          <label>
+            Responsible Person
+            <br />
+            <input
+              placeholder="Who owns this project?"
+              value={responsiblePerson}
+              onChange={(e) => setResponsiblePerson(e.target.value)}
+            />
+          </label>
+          <label>
+            Deadline
+            <br />
+            <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+          </label>
           {isSuperAdmin ? (
             <CompanyDepartmentFields
               company={company}
@@ -185,6 +203,13 @@ export default function Projects() {
                 </div>
               )}
               {p.description && <div className="muted">{p.description}</div>}
+              {(p.responsible_person || p.deadline) && (
+                <div className="muted">
+                  {p.responsible_person && `Owner: ${p.responsible_person}`}
+                  {p.responsible_person && p.deadline && ' · '}
+                  {p.deadline && `Deadline: ${p.deadline}`}
+                </div>
+              )}
             </div>
             <StatusBadge status={p.status} />
           </Link>

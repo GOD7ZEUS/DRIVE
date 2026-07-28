@@ -25,7 +25,7 @@ router.get('/', async (req, res, next) => {
 
 router.post('/', canEdit, async (req, res, next) => {
   try {
-    const { name, description = '', status = 'planning' } = req.body;
+    const { name, description = '', status = 'planning', responsible_person = '', deadline = null } = req.body;
     if (!name || !name.trim()) {
       return res.status(400).json({ error: 'name is required' });
     }
@@ -48,15 +48,17 @@ router.post('/', canEdit, async (req, res, next) => {
     }
 
     const result = await run(
-      `INSERT INTO projects (name, description, status, company, department, company_id, department_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO projects (name, description, status, company, department, company_id, department_id, responsible_person, deadline)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       name.trim(),
       description,
       status,
       companyRow.name,
       departmentRow.name,
       companyRow.id,
-      departmentRow.id
+      departmentRow.id,
+      responsible_person,
+      deadline
     );
     const project = await get('SELECT * FROM projects WHERE id = ?', result.lastInsertRowid);
     res.status(201).json(project);
@@ -80,18 +82,20 @@ router.patch('/:id', canEdit, async (req, res, next) => {
     const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
     if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
 
-    const { name, description, status } = req.body;
+    const { name, description, status, responsible_person, deadline } = req.body;
     if (status !== undefined && !PROJECT_STATUSES.includes(status)) {
       return res.status(400).json({ error: `status must be one of ${PROJECT_STATUSES.join(', ')}` });
     }
 
     await run(
       `UPDATE projects SET
-        name = ?, description = ?, status = ?, updated_at = datetime('now')
+        name = ?, description = ?, status = ?, responsible_person = ?, deadline = ?, updated_at = datetime('now')
        WHERE id = ?`,
       name !== undefined ? name : project.name,
       description !== undefined ? description : project.description,
       status !== undefined ? status : project.status,
+      responsible_person !== undefined ? responsible_person : project.responsible_person,
+      deadline !== undefined ? deadline : project.deadline,
       req.params.id
     );
 
