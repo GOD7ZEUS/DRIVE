@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Routes, Route, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from './auth.jsx';
 import { useTheme } from './theme.js';
@@ -9,11 +10,13 @@ import Users from './pages/Users.jsx';
 import Companies from './pages/Companies.jsx';
 import Login from './pages/Login.jsx';
 import LoadingScreen from './components/LoadingScreen.jsx';
+import ChangePasswordModal from './components/ChangePasswordModal.jsx';
 
 export default function App() {
   const { user, loading, logout } = useAuth();
   const [theme, toggleTheme] = useTheme();
   const location = useLocation();
+  const [showChangePassword, setShowChangePassword] = useState(false);
 
   if (loading) return <LoadingScreen />;
   if (!user) return <Login />;
@@ -45,9 +48,11 @@ export default function App() {
           <span className="muted">
             {user.email} · {user.role === 'super_admin' ? 'Super Admin' : user.role === 'admin' ? 'Admin' : 'View'}
           </span>
+          <button onClick={() => setShowChangePassword(true)}>Change Password</button>
           <button onClick={logout}>Log out</button>
         </div>
       </nav>
+      {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} />}
       <main className="content" key={location.pathname}>
         <Routes>
           <Route path="/" element={<Dashboard />} />

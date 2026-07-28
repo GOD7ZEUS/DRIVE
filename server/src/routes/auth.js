@@ -1,9 +1,27 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
+import rateLimit from 'express-rate-limit';
 import { get, run } from '../db.js';
 import { signToken, requireAuth, COOKIE_NAME, COOKIE_MAX_AGE_MS } from '../middleware/auth.js';
 
 const router = Router();
+
+// Blunt brute-force protection: caps guesses at a password (or spam account-setup
+// attempts) per IP, independent of whether the guess was right or wrong.
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'too many attempts, please try again in a few minutes' },
+});
+
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  sameSite: 'lax',
+  secure: process.env.NODE_ENV === 'production',
+  maxAge: COOKIE_MAX_AGE_MS,
+};
 
 router.get('/status', async (req, res, next) => {
   try {
@@ -14,7 +32,7 @@ router.get('/status', async (req, res, next) => {
   }
 });
 
-router.post('/setup', async (req, res, next) => {
+router.post('/setup', authLimiter, async (req, res, next) => {
   try {
     const count = (await get("SELECT COUNT(*) as count FROM users WHERE role = 'super_admin'")).count;
     if (count > 0) {
@@ -39,18 +57,14 @@ router.post('/setup', async (req, res, next) => {
     const user = await get('SELECT * FROM users WHERE id = ?', result.lastInsertRowid);
 
     const token = signToken(user);
-    res.cookie(COOKIE_NAME, token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      maxAge: COOKIE_MAX_AGE_MS,
-    });
+    res.cookie(COOKIE_NAME, token, COOKIE_OPTIONS);
     res.status(201).json({ id: user.id, email: user.email, role: user.role, company: null, department: null });
   } catch (err) {
     next(err);
   }
 });
 
-router.post('/login', async (req, res, next) => {
+router.post('/login', authLimiter, async (req, res, next) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -62,11 +76,7 @@ router.post('/login', async (req, res, next) => {
     }
 
     const token = signToken(user);
-    res.cookie(COOKIE_NAME, token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      maxAge: COOKIE_MAX_AGE_MS,
-    });
+    res.cookie(COOKIE_NAME, token, COOKIE_OPTIONS);
     res.json({ id: user.id, email: user.email, role: user.role, company: user.company, department: user.department });
   } catch (err) {
     next(err);
@@ -74,7 +84,7 @@ router.post('/login', async (req, res, next) => {
 });
 
 router.post('/logout', (req, res) => {
-  res.clearCookie(COOKIE_NAME);
+  res.clearCookie(COOKIE_NAME, { httpOnly: true, sameSite: 'lax', secure: COOKIE_OPTIONS.secure });
   res.status(204).end();
 });
 
@@ -86,6 +96,29 @@ router.get('/me', requireAuth, (req, res) => {
     company: req.user.company,
     department: req.user.department,
   });
+});
+
+router.post('/change-password', requireAuth, authLimiter, async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'currentPassword and newPassword are required' });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'new password must be at least 6 characters' });
+    }
+
+    const user = await get('SELECT * FROM users WHERE id = ?', req.user.id);
+    if (!bcrypt.compareSync(currentPassword, user.password_hash)) {
+      return res.status(401).json({ error: 'current password is incorrect' });
+    }
+
+    const passwordHash = bcrypt.hashSync(newPassword, 10);
+    await run('UPDATE users SET password_hash = ? WHERE id = ?', passwordHash, req.user.id);
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default router;
