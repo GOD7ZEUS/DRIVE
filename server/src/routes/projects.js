@@ -87,15 +87,25 @@ router.patch('/:id', canEdit, async (req, res, next) => {
       return res.status(400).json({ error: `status must be one of ${PROJECT_STATUSES.join(', ')}` });
     }
 
+    // Track when a project actually finished (for TAT reporting), separate from
+    // updated_at which changes on any edit. Re-opening a completed project
+    // clears it, so re-completing it later records a fresh completion date.
+    let completedAt = project.completed_at;
+    if (status !== undefined && status !== project.status) {
+      completedAt = status === 'completed' ? new Date().toISOString() : null;
+    }
+
     await run(
       `UPDATE projects SET
-        name = ?, description = ?, status = ?, responsible_person = ?, deadline = ?, updated_at = datetime('now')
+        name = ?, description = ?, status = ?, responsible_person = ?, deadline = ?,
+        completed_at = ?, updated_at = datetime('now')
        WHERE id = ?`,
       name !== undefined ? name : project.name,
       description !== undefined ? description : project.description,
       status !== undefined ? status : project.status,
       responsible_person !== undefined ? responsible_person : project.responsible_person,
       deadline !== undefined ? deadline : project.deadline,
+      completedAt,
       req.params.id
     );
 

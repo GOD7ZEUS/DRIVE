@@ -165,6 +165,23 @@ export default function ProjectDetail() {
               )}
             </td>
           </tr>
+          {project.completed_at && (
+            <tr>
+              <th>Completed</th>
+              <td>
+                {project.completed_at.slice(0, 10)}
+                {project.deadline && (
+                  <span className="muted">
+                    {' '}
+                    ·{' '}
+                    {project.completed_at.slice(0, 10) <= project.deadline
+                      ? 'within TAT'
+                      : 'exceeded TAT'}
+                  </span>
+                )}
+              </td>
+            </tr>
+          )}
           <tr>
             <th>Company</th>
             <td>

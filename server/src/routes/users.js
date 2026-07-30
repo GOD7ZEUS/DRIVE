@@ -13,9 +13,15 @@ function allowedRoles(req) {
 
 router.get('/', async (req, res, next) => {
   try {
-    const users = await all(
-      'SELECT id, email, role, company, department, company_id, department_id, is_master, created_at FROM users ORDER BY created_at ASC'
-    );
+    // The master account is invisible to regular super admins — only master sees master.
+    const users = req.user.is_master
+      ? await all(
+          'SELECT id, email, role, company, department, company_id, department_id, is_master, created_at FROM users ORDER BY created_at ASC'
+        )
+      : await all(
+          `SELECT id, email, role, company, department, company_id, department_id, is_master, created_at
+           FROM users WHERE is_master = 0 ORDER BY created_at ASC`
+        );
     res.json(users);
   } catch (err) {
     next(err);
@@ -80,7 +86,12 @@ router.patch('/:id', async (req, res, next) => {
   try {
     const user = await get('SELECT * FROM users WHERE id = ?', req.params.id);
     if (!user) return res.status(404).json({ error: 'user not found' });
-    if ((user.role === 'super_admin' || user.is_master) && !req.user.is_master) {
+    // The master account is invisible to non-master requesters — a 404 here,
+    // not a 403, so its existence can't be inferred from the error either.
+    if (user.is_master && !req.user.is_master) {
+      return res.status(404).json({ error: 'user not found' });
+    }
+    if (user.role === 'super_admin' && !req.user.is_master) {
       return res.status(403).json({ error: 'only the master account can modify a super admin account' });
     }
     if (user.is_master) {
@@ -117,6 +128,9 @@ router.delete('/:id', async (req, res, next) => {
   try {
     const user = await get('SELECT * FROM users WHERE id = ?', req.params.id);
     if (!user) return res.status(404).json({ error: 'user not found' });
+    if (user.is_master && !req.user.is_master) {
+      return res.status(404).json({ error: 'user not found' });
+    }
     if (user.is_master) {
       return res.status(403).json({ error: 'the master account cannot be deleted from here' });
     }

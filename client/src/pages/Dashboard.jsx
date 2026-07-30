@@ -38,6 +38,41 @@ export default function Dashboard() {
       </div>
 
       <div className="section">
+        <h2>Turn-Around Time (TAT)</h2>
+        <div className="grid grid-3">
+          <div className="panel stat-card">
+            <div className="stat-value">{data.avgTatDays != null ? `${data.avgTatDays}d` : '—'}</div>
+            <div className="stat-label">Average TAT</div>
+          </div>
+          <div className="panel stat-card">
+            <div className="stat-value">{data.projectsInTat.length}</div>
+            <div className="stat-label">Projects in TAT</div>
+          </div>
+          <div className="panel stat-card">
+            <div className="stat-value">{data.projectsExceedingTat.length}</div>
+            <div className="stat-label">Projects exceeding TAT</div>
+          </div>
+        </div>
+
+        {data.projectsExceedingTat.length > 0 && (
+          <div className="list" style={{ marginTop: 16 }}>
+            {data.projectsExceedingTat.map((p) => (
+              <Link key={p.id} to={`/projects/${p.id}`} className="list-item">
+                <div>
+                  <div className="title">{p.name}</div>
+                  <div className="muted">
+                    Deadline {p.deadline}
+                    {p.completed_at ? ` · completed ${p.completed_at.slice(0, 10)}` : ' · not yet completed'}
+                  </div>
+                </div>
+                <StatusBadge status={p.status} />
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="section">
         <h2>Overdue</h2>
         {data.overdueTasks.length === 0 && data.overdueMilestones.length === 0 ? (
           <p className="muted">Nothing overdue.</p>

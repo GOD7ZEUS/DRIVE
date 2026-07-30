@@ -131,6 +131,7 @@ await ensureColumn('users', 'reset_otp_locked_until', 'TEXT');
 await ensureColumn('users', 'is_master', 'INTEGER NOT NULL DEFAULT 0');
 await ensureColumn('users', 'security_question', 'TEXT');
 await ensureColumn('users', 'security_answer_hash', 'TEXT');
+await ensureColumn('projects', 'completed_at', 'TEXT');
 
 export async function getOrCreateCompany(name) {
   const trimmed = name.trim();

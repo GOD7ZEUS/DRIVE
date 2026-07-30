@@ -10,6 +10,7 @@ router.get('/', async (req, res, next) => {
     const projectFilter = scope ? 'WHERE company_id = ? AND department_id = ?' : '';
     const projectParams = scope ? [scope.companyId, scope.departmentId] : [];
     const taskProjectFilter = scope ? 'AND projects.company_id = ? AND projects.department_id = ?' : '';
+    const projectScopeAnd = scope ? 'AND company_id = ? AND department_id = ?' : '';
 
     const projectsByStatus = await all(
       `SELECT status, COUNT(*) as count FROM projects ${projectFilter} GROUP BY status`,
@@ -70,6 +71,43 @@ router.get('/', async (req, res, next) => {
       ...projectParams
     );
 
+    // TAT (turn-around time): for a completed project, the days from creation
+    // to completion. "In TAT" / "exceeding TAT" is measured against the
+    // project's deadline — completed late, or still open and past its
+    // deadline, counts as exceeding. Projects with no deadline set are
+    // excluded, since there's nothing to measure against.
+    const avgTatRow = await all(
+      `SELECT AVG(julianday(completed_at) - julianday(created_at)) as avg_tat_days
+       FROM projects
+       WHERE completed_at IS NOT NULL ${projectScopeAnd}`,
+      ...projectParams
+    );
+    const avgTatDays = avgTatRow[0]?.avg_tat_days != null ? Math.round(avgTatRow[0].avg_tat_days * 10) / 10 : null;
+
+    const projectsExceedingTat = await all(
+      `SELECT * FROM projects
+       WHERE deadline IS NOT NULL
+         AND (
+           (status = 'completed' AND completed_at IS NOT NULL AND date(completed_at) > date(deadline))
+           OR (status != 'completed' AND date(deadline) < date('now'))
+         )
+         ${projectScopeAnd}
+       ORDER BY deadline ASC`,
+      ...projectParams
+    );
+
+    const projectsInTat = await all(
+      `SELECT * FROM projects
+       WHERE deadline IS NOT NULL
+         AND (
+           (status = 'completed' AND completed_at IS NOT NULL AND date(completed_at) <= date(deadline))
+           OR (status != 'completed' AND date(deadline) >= date('now'))
+         )
+         ${projectScopeAnd}
+       ORDER BY deadline ASC`,
+      ...projectParams
+    );
+
     res.json({
       projectsByStatus,
       tasksByStatus,
@@ -77,6 +115,9 @@ router.get('/', async (req, res, next) => {
       upcomingTasks,
       overdueMilestones,
       upcomingMilestones,
+      avgTatDays,
+      projectsExceedingTat,
+      projectsInTat,
     });
   } catch (err) {
     next(err);
