@@ -50,16 +50,9 @@ router.post('/', canEdit, async (req, res, next) => {
 
     let responsibleUser = null;
     if (responsible_user_id) {
-      responsibleUser = await get(
-        'SELECT * FROM users WHERE id = ? AND company_id = ? AND department_id = ?',
-        responsible_user_id,
-        companyRow.id,
-        departmentRow.id
-      );
+      responsibleUser = await get('SELECT * FROM users WHERE id = ? AND is_master = 0', responsible_user_id);
       if (!responsibleUser) {
-        return res
-          .status(400)
-          .json({ error: "responsible person must be an existing user in this project's company and department" });
+        return res.status(400).json({ error: 'responsible person must be an existing Drive user' });
       }
     }
 
@@ -85,24 +78,14 @@ router.post('/', canEdit, async (req, res, next) => {
   }
 });
 
-// Company/department-scoped user lookup for pickers that run before a project
-// exists yet (e.g. the "Responsible Person" dropdown on the New Project form).
-// Registered before the `/:id` routes below so "assignable-users" isn't
-// swallowed as an :id value.
+// Every non-master user in Drive, for pickers that run before a project
+// exists yet (e.g. the "Responsible Person" dropdown on the New Project
+// form). Registered before the `/:id` routes below so "assignable-users"
+// isn't swallowed as an :id value.
 router.get('/assignable-users', async (req, res, next) => {
   try {
-    const companyId = Number(req.query.companyId);
-    const departmentId = Number(req.query.departmentId);
-    if (!companyId || !departmentId) return res.json([]);
-    if (req.user.role !== 'super_admin') {
-      if (companyId !== req.user.company_id || departmentId !== req.user.department_id) {
-        return res.status(403).json({ error: 'forbidden' });
-      }
-    }
     const users = await all(
-      'SELECT id, email, first_name, last_name, role FROM users WHERE company_id = ? AND department_id = ? ORDER BY email ASC',
-      companyId,
-      departmentId
+      'SELECT id, email, first_name, last_name, role FROM users WHERE is_master = 0 ORDER BY email ASC'
     );
     res.json(users);
   } catch (err) {
@@ -137,16 +120,9 @@ router.patch('/:id', canEdit, async (req, res, next) => {
         newResponsibleUserId = null;
         responsiblePersonText = '';
       } else {
-        const responsibleUser = await get(
-          'SELECT * FROM users WHERE id = ? AND company_id = ? AND department_id = ?',
-          responsible_user_id,
-          project.company_id,
-          project.department_id
-        );
+        const responsibleUser = await get('SELECT * FROM users WHERE id = ? AND is_master = 0', responsible_user_id);
         if (!responsibleUser) {
-          return res
-            .status(400)
-            .json({ error: "responsible person must be an existing user in this project's company and department" });
+          return res.status(400).json({ error: 'responsible person must be an existing Drive user' });
         }
         newResponsibleUserId = responsibleUser.id;
         responsiblePersonText = displayName(responsibleUser);
@@ -249,18 +225,16 @@ router.post('/:id/milestones', canEdit, async (req, res, next) => {
 });
 
 // Task assignment must go to someone with a real Drive account (so we can
-// actually email them) — scoped to the project's own company+department,
-// not the requester's, so this works the same for whoever is viewing it.
+// actually email them) — any account in Drive is eligible, not just ones in
+// the project's own company/department, so a project can pull in people
+// from anywhere in the org. The master account is excluded.
 router.get('/:id/assignable-users', async (req, res, next) => {
   try {
     const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
     if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
-    if (!project.company_id || !project.department_id) return res.json([]);
 
     const users = await all(
-      'SELECT id, email, first_name, last_name, role FROM users WHERE company_id = ? AND department_id = ? ORDER BY email ASC',
-      project.company_id,
-      project.department_id
+      'SELECT id, email, first_name, last_name, role FROM users WHERE is_master = 0 ORDER BY email ASC'
     );
     res.json(users);
   } catch (err) {
@@ -303,14 +277,9 @@ router.post('/:id/tasks', canEdit, async (req, res, next) => {
 
     let assigneeUser = null;
     if (assignee_user_id) {
-      assigneeUser = await get(
-        'SELECT * FROM users WHERE id = ? AND company_id = ? AND department_id = ?',
-        assignee_user_id,
-        project.company_id,
-        project.department_id
-      );
+      assigneeUser = await get('SELECT * FROM users WHERE id = ? AND is_master = 0', assignee_user_id);
       if (!assigneeUser) {
-        return res.status(400).json({ error: 'assignee must be an existing user in this project\'s company and department' });
+        return res.status(400).json({ error: 'assignee must be an existing Drive user' });
       }
     }
 

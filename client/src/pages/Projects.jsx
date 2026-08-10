@@ -23,8 +23,6 @@ export default function Projects() {
   const [deadline, setDeadline] = useState('');
   const [company, setCompany] = useState('');
   const [department, setDepartment] = useState('');
-  const [companyId, setCompanyId] = useState(null);
-  const [departmentId, setDepartmentId] = useState(null);
   const [assignableUsers, setAssignableUsers] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [companyFilter, setCompanyFilter] = useState(searchParams.get('companyId') || 'all');
@@ -36,22 +34,10 @@ export default function Projects() {
 
   useEffect(load, []);
 
-  // Non-super-admins always create within their own company/department, so
-  // that scope is known immediately. Super Admins pick it via
-  // CompanyDepartmentFields, which only resolves once both selects are set.
   useEffect(() => {
     if (!showForm) return;
-    const scopeCompanyId = isSuperAdmin ? companyId : user.company_id;
-    const scopeDepartmentId = isSuperAdmin ? departmentId : user.department_id;
-    if (!scopeCompanyId || !scopeDepartmentId) {
-      setAssignableUsers([]);
-      return;
-    }
-    api
-      .getAssignableUsersByScope(scopeCompanyId, scopeDepartmentId)
-      .then(setAssignableUsers)
-      .catch(() => setAssignableUsers([]));
-  }, [showForm, isSuperAdmin, companyId, departmentId, user.company_id, user.department_id]);
+    api.getAllAssignableUsers().then(setAssignableUsers).catch(() => setAssignableUsers([]));
+  }, [showForm]);
 
   const companies = useMemo(() => {
     if (!projects) return [];
@@ -109,8 +95,6 @@ export default function Projects() {
       setDeadline('');
       setCompany('');
       setDepartment('');
-      setCompanyId(null);
-      setDepartmentId(null);
       setAssignableUsers([]);
       setShowForm(false);
       load();
@@ -190,11 +174,6 @@ export default function Projects() {
                 </option>
               ))}
             </select>
-            {isSuperAdmin && !(companyId && departmentId) && (
-              <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-                Pick a company and department below to choose a responsible person.
-              </div>
-            )}
           </label>
           <label>
             Deadline
@@ -207,10 +186,6 @@ export default function Projects() {
               department={department}
               onCompanyChange={setCompany}
               onDepartmentChange={setDepartment}
-              onIdsChange={(cId, dId) => {
-                setCompanyId(cId);
-                setDepartmentId(dId);
-              }}
             />
           ) : (
             <p className="muted">

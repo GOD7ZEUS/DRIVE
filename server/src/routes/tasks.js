@@ -54,8 +54,8 @@ router.patch('/:id', canEdit, async (req, res, next) => {
       return res.status(400).json({ error: `status must be one of ${TASK_STATUSES.join(', ')}` });
     }
 
-    // Reassigning to a real Drive user requires them to be in the same
-    // company+department as the task's project, same as on creation.
+    // Reassigning to a real Drive user — any account in Drive is eligible,
+    // not just ones in the task's own project company/department.
     let newAssigneeText = assignee !== undefined ? assignee : task.assignee;
     let newAssigneeUserId = task.assignee_user_id;
     let assigneeChangedTo = null;
@@ -64,17 +64,9 @@ router.patch('/:id', canEdit, async (req, res, next) => {
         newAssigneeUserId = null;
         newAssigneeText = '';
       } else {
-        const project = await get('SELECT * FROM projects WHERE id = ?', task.project_id);
-        const assigneeUser = await get(
-          'SELECT * FROM users WHERE id = ? AND company_id = ? AND department_id = ?',
-          assignee_user_id,
-          project.company_id,
-          project.department_id
-        );
+        const assigneeUser = await get('SELECT * FROM users WHERE id = ? AND is_master = 0', assignee_user_id);
         if (!assigneeUser) {
-          return res
-            .status(400)
-            .json({ error: "assignee must be an existing user in this project's company and department" });
+          return res.status(400).json({ error: 'assignee must be an existing Drive user' });
         }
         newAssigneeUserId = assigneeUser.id;
         newAssigneeText = displayName(assigneeUser);

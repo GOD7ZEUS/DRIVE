@@ -36,8 +36,7 @@ export const api = {
   deleteMilestone: (id) => request(`/milestones/${id}`, { method: 'DELETE' }),
 
   getAssignableUsers: (projectId) => request(`/projects/${projectId}/assignable-users`),
-  getAssignableUsersByScope: (companyId, departmentId) =>
-    request(`/projects/assignable-users?companyId=${companyId}&departmentId=${departmentId}`),
+  getAllAssignableUsers: () => request('/projects/assignable-users'),
   getProjectTasks: (projectId) => request(`/projects/${projectId}/tasks`),
   createTask: (projectId, data) =>
     request(`/projects/${projectId}/tasks`, { method: 'POST', body: JSON.stringify(data) }),
