@@ -612,6 +612,27 @@ a.list-item:hover {
   gap: 10px;
 }
 
+.dashboard-filters {
+  gap: 24px;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filter-group .muted {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.filter-group select {
+  min-width: 190px;
+}
+
 button, input, select, textarea {
   font: inherit;
 }

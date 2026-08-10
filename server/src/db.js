@@ -132,6 +132,8 @@ await ensureColumn('users', 'is_master', 'INTEGER NOT NULL DEFAULT 0');
 await ensureColumn('users', 'security_question', 'TEXT');
 await ensureColumn('users', 'security_answer_hash', 'TEXT');
 await ensureColumn('projects', 'completed_at', 'TEXT');
+await ensureColumn('tasks', 'assignee_user_id', 'INTEGER REFERENCES users(id)');
+await ensureColumn('tasks', 'reminder_sent', 'INTEGER NOT NULL DEFAULT 0');
 
 export async function getOrCreateCompany(name) {
   const trimmed = name.trim();

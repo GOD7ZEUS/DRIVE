@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { get, all, run, getOrCreateCompany, getOrCreateDepartment } from '../db.js';
 import { requireRole, matchesScope, scopeClause } from '../middleware/auth.js';
+import { sendTaskAssignedEmail } from '../notifications.js';
 
 const router = Router();
 const canEdit = requireRole('super_admin', 'admin');
@@ -162,6 +163,26 @@ router.post('/:id/milestones', canEdit, async (req, res, next) => {
   }
 });
 
+// Task assignment must go to someone with a real Drive account (so we can
+// actually email them) — scoped to the project's own company+department,
+// not the requester's, so this works the same for whoever is viewing it.
+router.get('/:id/assignable-users', async (req, res, next) => {
+  try {
+    const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
+    if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
+    if (!project.company_id || !project.department_id) return res.json([]);
+
+    const users = await all(
+      'SELECT id, email, role FROM users WHERE company_id = ? AND department_id = ? ORDER BY email ASC',
+      project.company_id,
+      project.department_id
+    );
+    res.json(users);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/:id/tasks', async (req, res, next) => {
   try {
     const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
@@ -180,25 +201,49 @@ router.post('/:id/tasks', canEdit, async (req, res, next) => {
     const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
     if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
 
-    const { title, description = '', assignee = '', status = 'todo', due_date = null, milestone_id = null } = req.body;
+    const {
+      title,
+      description = '',
+      status = 'todo',
+      due_date = null,
+      milestone_id = null,
+      assignee_user_id = null,
+    } = req.body;
     if (!title || !title.trim()) {
       return res.status(400).json({ error: 'title is required' });
     }
     if (!TASK_STATUSES.includes(status)) {
       return res.status(400).json({ error: `status must be one of ${TASK_STATUSES.join(', ')}` });
     }
+
+    let assigneeUser = null;
+    if (assignee_user_id) {
+      assigneeUser = await get(
+        'SELECT * FROM users WHERE id = ? AND company_id = ? AND department_id = ?',
+        assignee_user_id,
+        project.company_id,
+        project.department_id
+      );
+      if (!assigneeUser) {
+        return res.status(400).json({ error: 'assignee must be an existing user in this project\'s company and department' });
+      }
+    }
+
     const result = await run(
-      `INSERT INTO tasks (project_id, milestone_id, title, description, assignee, status, due_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO tasks (project_id, milestone_id, title, description, assignee, assignee_user_id, status, due_date)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       req.params.id,
       milestone_id,
       title.trim(),
       description,
-      assignee,
+      assigneeUser ? assigneeUser.email : '',
+      assigneeUser ? assigneeUser.id : null,
       status,
       due_date
     );
-    res.status(201).json(await get('SELECT * FROM tasks WHERE id = ?', result.lastInsertRowid));
+    const task = await get('SELECT * FROM tasks WHERE id = ?', result.lastInsertRowid);
+    if (assigneeUser) sendTaskAssignedEmail(assigneeUser.email, task, project);
+    res.status(201).json(task);
   } catch (err) {
     next(err);
   }

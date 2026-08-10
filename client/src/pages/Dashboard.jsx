@@ -60,24 +60,30 @@ export default function Dashboard() {
       <div className="row-between">
         <h1>Dashboard</h1>
         {isSuperAdmin && companies && companies.length > 0 && (
-          <div className="row">
-            <select value={companyFilter} onChange={(e) => handleCompanyFilterChange(e.target.value)}>
-              <option value="all">All companies</option>
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            {companyFilter !== 'all' && departments && departments.length > 0 && (
-              <select value={departmentFilter} onChange={(e) => handleDepartmentFilterChange(e.target.value)}>
-                <option value="all">All departments</option>
-                {departments.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
+          <div className="row dashboard-filters">
+            <label className="filter-group">
+              <span className="muted">Company</span>
+              <select value={companyFilter} onChange={(e) => handleCompanyFilterChange(e.target.value)}>
+                <option value="all">All companies</option>
+                {companies.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
                   </option>
                 ))}
               </select>
+            </label>
+            {companyFilter !== 'all' && departments && departments.length > 0 && (
+              <label className="filter-group">
+                <span className="muted">Department</span>
+                <select value={departmentFilter} onChange={(e) => handleDepartmentFilterChange(e.target.value)}>
+                  <option value="all">All departments</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
             )}
           </div>
         )}

@@ -15,6 +15,7 @@ export default function ProjectDetail() {
   const [project, setProject] = useState(null);
   const [milestones, setMilestones] = useState([]);
   const [tasks, setTasks] = useState([]);
+  const [assignableUsers, setAssignableUsers] = useState([]);
   const [error, setError] = useState('');
   const [taskFilter, setTaskFilter] = useState('all');
 
@@ -27,16 +28,17 @@ export default function ProjectDetail() {
 
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [taskTitle, setTaskTitle] = useState('');
-  const [taskAssignee, setTaskAssignee] = useState('');
+  const [taskAssigneeUserId, setTaskAssigneeUserId] = useState('');
   const [taskDue, setTaskDue] = useState('');
   const [taskMilestone, setTaskMilestone] = useState('');
 
   function load() {
-    Promise.all([api.getProject(id), api.getMilestones(id), api.getProjectTasks(id)])
-      .then(([p, m, t]) => {
+    Promise.all([api.getProject(id), api.getMilestones(id), api.getProjectTasks(id), api.getAssignableUsers(id)])
+      .then(([p, m, t, u]) => {
         setProject(p);
         setMilestones(m);
         setTasks(t);
+        setAssignableUsers(u);
         setResponsiblePerson(p.responsible_person || '');
         setDeadline(p.deadline || '');
       })
@@ -90,12 +92,12 @@ export default function ProjectDetail() {
     if (!taskTitle.trim()) return;
     await api.createTask(id, {
       title: taskTitle,
-      assignee: taskAssignee,
+      assignee_user_id: taskAssigneeUserId || null,
       due_date: taskDue || null,
       milestone_id: taskMilestone || null,
     });
     setTaskTitle('');
-    setTaskAssignee('');
+    setTaskAssigneeUserId('');
     setTaskDue('');
     setTaskMilestone('');
     setShowTaskForm(false);
@@ -298,11 +300,14 @@ export default function ProjectDetail() {
               required
               autoFocus
             />
-            <input
-              placeholder="Assignee"
-              value={taskAssignee}
-              onChange={(e) => setTaskAssignee(e.target.value)}
-            />
+            <select value={taskAssigneeUserId} onChange={(e) => setTaskAssigneeUserId(e.target.value)}>
+              <option value="">Unassigned</option>
+              {assignableUsers.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.email}
+                </option>
+              ))}
+            </select>
             <input type="date" value={taskDue} onChange={(e) => setTaskDue(e.target.value)} />
             <select value={taskMilestone} onChange={(e) => setTaskMilestone(e.target.value)}>
               <option value="">No milestone</option>

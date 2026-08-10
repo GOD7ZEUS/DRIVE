@@ -13,11 +13,12 @@ export default function TaskDetail() {
   const canEdit = user.role !== 'view';
   const [task, setTask] = useState(null);
   const [comments, setComments] = useState([]);
+  const [assignableUsers, setAssignableUsers] = useState([]);
   const [error, setError] = useState('');
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [assignee, setAssignee] = useState('');
+  const [assigneeUserId, setAssigneeUserId] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [editing, setEditing] = useState(false);
 
@@ -31,8 +32,9 @@ export default function TaskDetail() {
         setComments(c);
         setTitle(t.title);
         setDescription(t.description || '');
-        setAssignee(t.assignee || '');
+        setAssigneeUserId(t.assignee_user_id || '');
         setDueDate(t.due_date || '');
+        api.getAssignableUsers(t.project_id).then(setAssignableUsers).catch(() => setAssignableUsers([]));
       })
       .catch((e) => setError(e.message));
   }
@@ -46,7 +48,12 @@ export default function TaskDetail() {
 
   async function handleSaveEdits(e) {
     e.preventDefault();
-    await api.updateTask(id, { title, description, assignee, due_date: dueDate || null });
+    await api.updateTask(id, {
+      title,
+      description,
+      assignee_user_id: assigneeUserId || null,
+      due_date: dueDate || null,
+    });
     setEditing(false);
     load();
   }
@@ -116,7 +123,14 @@ export default function TaskDetail() {
           <label>
             Assignee
             <br />
-            <input value={assignee} onChange={(e) => setAssignee(e.target.value)} />
+            <select value={assigneeUserId} onChange={(e) => setAssigneeUserId(e.target.value)}>
+              <option value="">Unassigned</option>
+              {assignableUsers.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.email}
+                </option>
+              ))}
+            </select>
           </label>
           <label>
             Due date
