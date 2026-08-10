@@ -103,18 +103,54 @@ router.patch('/:id', async (req, res, next) => {
       return res.status(403).json({ error: 'the master account cannot be modified from here' });
     }
 
-    const { role, password } = req.body;
+    const { role, password, first_name, last_name, company, department } = req.body;
     if (role !== undefined && !allowedRoles(req).includes(role)) {
       return res.status(400).json({ error: `role must be one of ${allowedRoles(req).join(', ')}` });
     }
     if (password !== undefined && password.length < 6) {
       return res.status(400).json({ error: 'password must be at least 6 characters' });
     }
+    if (first_name !== undefined && !first_name.trim()) {
+      return res.status(400).json({ error: 'first name cannot be empty' });
+    }
+    if (last_name !== undefined && !last_name.trim()) {
+      return res.status(400).json({ error: 'last name cannot be empty' });
+    }
+
+    // Resolve company/department the same way account creation does: cleared
+    // for a super_admin role, required (and re-resolved through
+    // getOrCreateCompany/Department) for anything else, whenever the role,
+    // company, or department is actually being touched — otherwise the
+    // account's existing scope is left untouched.
+    const effectiveRole = role !== undefined ? role : user.role;
+    let companyRow = { id: user.company_id, name: user.company };
+    let departmentRow = { id: user.department_id, name: user.department };
+    if (effectiveRole === 'super_admin') {
+      companyRow = { id: null, name: null };
+      departmentRow = { id: null, name: null };
+    } else if (company !== undefined || department !== undefined || role !== undefined) {
+      const companyName = company !== undefined ? company : user.company;
+      const departmentName = department !== undefined ? department : user.department;
+      if (!companyName || !companyName.trim() || !departmentName || !departmentName.trim()) {
+        return res.status(400).json({ error: 'company and department are required' });
+      }
+      companyRow = await getOrCreateCompany(companyName);
+      departmentRow = await getOrCreateDepartment(companyRow.id, departmentName);
+    }
 
     await run(
-      'UPDATE users SET role = ?, password_hash = ? WHERE id = ?',
+      `UPDATE users SET
+        role = ?, password_hash = ?, first_name = ?, last_name = ?,
+        company = ?, department = ?, company_id = ?, department_id = ?
+       WHERE id = ?`,
       role !== undefined ? role : user.role,
       password !== undefined ? bcrypt.hashSync(password, 10) : user.password_hash,
+      first_name !== undefined ? first_name.trim() : user.first_name,
+      last_name !== undefined ? last_name.trim() : user.last_name,
+      companyRow.name,
+      departmentRow.name,
+      companyRow.id,
+      departmentRow.id,
       req.params.id
     );
 

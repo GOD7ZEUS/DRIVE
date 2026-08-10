@@ -8,16 +8,43 @@ export default function CompanyDepartmentFields({
   onCompanyChange,
   onDepartmentChange,
   onIdsChange,
+  initialCompany,
+  initialDepartment,
 }) {
   const [companies, setCompanies] = useState(null);
   const [companyId, setCompanyId] = useState('');
 
   const [departments, setDepartments] = useState(null);
   const [departmentId, setDepartmentId] = useState('');
+  const [preselected, setPreselected] = useState(false);
 
   useEffect(() => {
     api.getCompanies().then(setCompanies).catch(() => setCompanies([]));
   }, []);
+
+  // Edit forms pass the record's current company/department name so the
+  // pickers start pre-selected instead of forcing a reselect from scratch;
+  // new-record forms simply don't pass these and nothing here runs.
+  useEffect(() => {
+    if (!companies || preselected || !initialCompany) return;
+    setPreselected(true);
+    const match = companies.find((c) => c.name === initialCompany);
+    if (!match) return;
+    setCompanyId(String(match.id));
+    onCompanyChange(match.name);
+    api
+      .getCompanyDepartments(match.id)
+      .then((depts) => {
+        setDepartments(depts);
+        const deptMatch = depts.find((d) => d.name === initialDepartment);
+        if (deptMatch) {
+          setDepartmentId(String(deptMatch.id));
+          onDepartmentChange(deptMatch.name);
+        }
+        onIdsChange?.(match.id, deptMatch ? deptMatch.id : null);
+      })
+      .catch(() => setDepartments([]));
+  }, [companies, preselected, initialCompany, initialDepartment]);
 
   function handleCompanySelect(value) {
     setCompanyId(value);
