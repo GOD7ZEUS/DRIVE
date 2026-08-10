@@ -4,13 +4,37 @@ import { scopeClause } from '../middleware/auth.js';
 
 const router = Router();
 
+// Non-super-admins are always locked to their own company/department, no
+// matter what query params they send. Super admins see everything by
+// default, but can optionally filter to one company (and, within it, one
+// department) via ?companyId=&departmentId=.
+function resolveFilter(req) {
+  const scope = scopeClause(req);
+  if (scope) return scope;
+  const companyId = req.query.companyId ? Number(req.query.companyId) : null;
+  if (!companyId) return null;
+  const departmentId = req.query.departmentId ? Number(req.query.departmentId) : null;
+  return { companyId, departmentId };
+}
+
+function filterSql(filter, tablePrefix = '') {
+  if (!filter) return { where: '', and: '', params: [] };
+  const prefix = tablePrefix ? `${tablePrefix}.` : '';
+  const conditions = [`${prefix}company_id = ?`];
+  const params = [filter.companyId];
+  if (filter.departmentId) {
+    conditions.push(`${prefix}department_id = ?`);
+    params.push(filter.departmentId);
+  }
+  return { where: `WHERE ${conditions.join(' AND ')}`, and: `AND ${conditions.join(' AND ')}`, params };
+}
+
 router.get('/', async (req, res, next) => {
   try {
-    const scope = scopeClause(req);
-    const projectFilter = scope ? 'WHERE company_id = ? AND department_id = ?' : '';
-    const projectParams = scope ? [scope.companyId, scope.departmentId] : [];
-    const taskProjectFilter = scope ? 'AND projects.company_id = ? AND projects.department_id = ?' : '';
-    const projectScopeAnd = scope ? 'AND company_id = ? AND department_id = ?' : '';
+    const filter = resolveFilter(req);
+    const { where: projectFilter, params: projectParams } = filterSql(filter);
+    const { and: taskProjectFilter } = filterSql(filter, 'projects');
+    const { and: projectScopeAnd } = filterSql(filter);
 
     const projectsByStatus = await all(
       `SELECT status, COUNT(*) as count FROM projects ${projectFilter} GROUP BY status`,

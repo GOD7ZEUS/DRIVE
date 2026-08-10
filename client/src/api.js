@@ -46,7 +46,13 @@ export const api = {
   createComment: (taskId, data) =>
     request(`/tasks/${taskId}/comments`, { method: 'POST', body: JSON.stringify(data) }),
 
-  getDashboard: () => request('/dashboard'),
+  getDashboard: (companyId, departmentId) => {
+    const params = new URLSearchParams();
+    if (companyId) params.set('companyId', companyId);
+    if (departmentId) params.set('departmentId', departmentId);
+    const qs = params.toString();
+    return request(`/dashboard${qs ? `?${qs}` : ''}`);
+  },
 
   getAuthStatus: () => request('/auth/status'),
   setup: (email, password) =>
