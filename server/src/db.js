@@ -135,6 +135,17 @@ await ensureColumn('projects', 'completed_at', 'TEXT');
 await ensureColumn('tasks', 'assignee_user_id', 'INTEGER REFERENCES users(id)');
 await ensureColumn('tasks', 'reminder_sent', 'INTEGER NOT NULL DEFAULT 0');
 await ensureColumn('projects', 'original_deadline', 'TEXT');
+await ensureColumn('users', 'first_name', 'TEXT');
+await ensureColumn('users', 'last_name', 'TEXT');
+await ensureColumn('projects', 'responsible_user_id', 'INTEGER REFERENCES users(id)');
+
+// Users created before first/last name existed have neither — fall back to
+// their email so every list/dropdown always has something to show.
+export function displayName(user) {
+  if (!user) return '';
+  const name = [user.first_name, user.last_name].filter(Boolean).join(' ');
+  return name || user.email;
+}
 
 export async function getOrCreateCompany(name) {
   const trimmed = name.trim();

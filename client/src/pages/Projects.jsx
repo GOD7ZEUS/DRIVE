@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import CompanyDepartmentFields from '../components/CompanyDepartmentFields.jsx';
+import { formatUserName } from '../userDisplay.js';
 
 const STATUSES = ['planning', 'active', 'on_hold', 'completed'];
 
@@ -18,10 +19,13 @@ export default function Projects() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState('planning');
-  const [responsiblePerson, setResponsiblePerson] = useState('');
+  const [responsibleUserId, setResponsibleUserId] = useState('');
   const [deadline, setDeadline] = useState('');
   const [company, setCompany] = useState('');
   const [department, setDepartment] = useState('');
+  const [companyId, setCompanyId] = useState(null);
+  const [departmentId, setDepartmentId] = useState(null);
+  const [assignableUsers, setAssignableUsers] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [companyFilter, setCompanyFilter] = useState(searchParams.get('companyId') || 'all');
   const [departmentFilter, setDepartmentFilter] = useState(searchParams.get('departmentId') || 'all');
@@ -31,6 +35,23 @@ export default function Projects() {
   }
 
   useEffect(load, []);
+
+  // Non-super-admins always create within their own company/department, so
+  // that scope is known immediately. Super Admins pick it via
+  // CompanyDepartmentFields, which only resolves once both selects are set.
+  useEffect(() => {
+    if (!showForm) return;
+    const scopeCompanyId = isSuperAdmin ? companyId : user.company_id;
+    const scopeDepartmentId = isSuperAdmin ? departmentId : user.department_id;
+    if (!scopeCompanyId || !scopeDepartmentId) {
+      setAssignableUsers([]);
+      return;
+    }
+    api
+      .getAssignableUsersByScope(scopeCompanyId, scopeDepartmentId)
+      .then(setAssignableUsers)
+      .catch(() => setAssignableUsers([]));
+  }, [showForm, isSuperAdmin, companyId, departmentId, user.company_id, user.department_id]);
 
   const companies = useMemo(() => {
     if (!projects) return [];
@@ -69,7 +90,13 @@ export default function Projects() {
     setSubmitting(true);
     setError('');
     try {
-      const payload = { name, description, status, responsible_person: responsiblePerson, deadline: deadline || null };
+      const payload = {
+        name,
+        description,
+        status,
+        responsible_user_id: responsibleUserId || null,
+        deadline: deadline || null,
+      };
       if (isSuperAdmin) {
         payload.company = company;
         payload.department = department;
@@ -78,10 +105,13 @@ export default function Projects() {
       setName('');
       setDescription('');
       setStatus('planning');
-      setResponsiblePerson('');
+      setResponsibleUserId('');
       setDeadline('');
       setCompany('');
       setDepartment('');
+      setCompanyId(null);
+      setDepartmentId(null);
+      setAssignableUsers([]);
       setShowForm(false);
       load();
     } catch (e) {
@@ -152,11 +182,19 @@ export default function Projects() {
           <label>
             Responsible Person
             <br />
-            <input
-              placeholder="Who owns this project?"
-              value={responsiblePerson}
-              onChange={(e) => setResponsiblePerson(e.target.value)}
-            />
+            <select value={responsibleUserId} onChange={(e) => setResponsibleUserId(e.target.value)}>
+              <option value="">Unassigned</option>
+              {assignableUsers.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {formatUserName(u)}
+                </option>
+              ))}
+            </select>
+            {isSuperAdmin && !(companyId && departmentId) && (
+              <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                Pick a company and department below to choose a responsible person.
+              </div>
+            )}
           </label>
           <label>
             Deadline
@@ -169,6 +207,10 @@ export default function Projects() {
               department={department}
               onCompanyChange={setCompany}
               onDepartmentChange={setDepartment}
+              onIdsChange={(cId, dId) => {
+                setCompanyId(cId);
+                setDepartmentId(dId);
+              }}
             />
           ) : (
             <p className="muted">

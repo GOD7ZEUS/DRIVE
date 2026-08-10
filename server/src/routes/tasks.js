@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { get, all, run } from '../db.js';
+import { get, all, run, displayName } from '../db.js';
 import { requireRole, matchesScope, scopeClause } from '../middleware/auth.js';
 import { sendTaskAssignedEmail } from '../notifications.js';
 
@@ -77,7 +77,7 @@ router.patch('/:id', canEdit, async (req, res, next) => {
             .json({ error: "assignee must be an existing user in this project's company and department" });
         }
         newAssigneeUserId = assigneeUser.id;
-        newAssigneeText = assigneeUser.email;
+        newAssigneeText = displayName(assigneeUser);
         if (assigneeUser.id !== task.assignee_user_id) assigneeChangedTo = assigneeUser;
       }
     }

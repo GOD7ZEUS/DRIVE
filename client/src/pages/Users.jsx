@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import CompanyDepartmentFields from '../components/CompanyDepartmentFields.jsx';
+import { formatUserName } from '../userDisplay.js';
 
 const ROLE_LABELS = { super_admin: 'Super Admin', admin: 'Admin', view: 'View' };
 
@@ -13,6 +14,8 @@ export default function Users() {
   const [users, setUsers] = useState(null);
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('view');
@@ -31,7 +34,17 @@ export default function Users() {
     setError('');
     setSubmitting(true);
     try {
-      await api.createUser({ email, password, role, company, department });
+      await api.createUser({
+        email,
+        password,
+        role,
+        company,
+        department,
+        first_name: firstName,
+        last_name: lastName,
+      });
+      setFirstName('');
+      setLastName('');
       setEmail('');
       setPassword('');
       setRole('view');
@@ -64,9 +77,19 @@ export default function Users() {
       {showForm && (
         <form className="panel form-grid" onSubmit={handleSubmit} style={{ marginBottom: 20 }}>
           <label>
+            First Name
+            <br />
+            <input value={firstName} onChange={(e) => setFirstName(e.target.value)} required autoFocus />
+          </label>
+          <label>
+            Last Name
+            <br />
+            <input value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+          </label>
+          <label>
             Email
             <br />
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           </label>
           <label>
             Password
@@ -122,10 +145,10 @@ export default function Users() {
           <div key={u.id} className="list-item">
             <div>
               <div className="title">
-                {u.email} {u.is_master && <span className="key-tag">MASTER</span>}
+                {formatUserName(u)} {u.is_master && <span className="key-tag">MASTER</span>}
               </div>
               <div className="muted">
-                {ROLE_LABELS[u.role]}
+                {u.email} · {ROLE_LABELS[u.role]}
                 {u.company && (
                   <>
                     {' · '}

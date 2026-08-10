@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
+import { formatUserName } from '../userDisplay.js';
 
 const PROJECT_STATUSES = ['planning', 'active', 'on_hold', 'completed'];
 const TASK_STATUSES = ['todo', 'in_progress', 'done'];
@@ -20,7 +21,7 @@ export default function ProjectDetail() {
   const [error, setError] = useState('');
   const [taskFilter, setTaskFilter] = useState('all');
 
-  const [responsiblePerson, setResponsiblePerson] = useState('');
+  const [responsibleUserId, setResponsibleUserId] = useState('');
   const [deadline, setDeadline] = useState('');
 
   const [showMilestoneForm, setShowMilestoneForm] = useState(false);
@@ -43,7 +44,7 @@ export default function ProjectDetail() {
         setMilestones(m);
         setTasks(t);
         setAssignableUsers(u);
-        setResponsiblePerson(p.responsible_person || '');
+        setResponsibleUserId(p.responsible_user_id || '');
         setDeadline(p.deadline || '');
       })
       .catch((e) => setError(e.message));
@@ -56,11 +57,11 @@ export default function ProjectDetail() {
     load();
   }
 
-  async function handleResponsiblePersonBlur() {
-    if (responsiblePerson !== (project.responsible_person || '')) {
-      await api.updateProject(id, { responsible_person: responsiblePerson });
-      load();
-    }
+  async function handleResponsibleUserChange(e) {
+    const value = e.target.value;
+    setResponsibleUserId(value);
+    await api.updateProject(id, { responsible_user_id: value || null });
+    load();
   }
 
   async function handleDeadlineChange(e) {
@@ -179,12 +180,14 @@ export default function ProjectDetail() {
             <th>Responsible Person</th>
             <td>
               {canEdit ? (
-                <input
-                  value={responsiblePerson}
-                  placeholder="Unassigned"
-                  onChange={(e) => setResponsiblePerson(e.target.value)}
-                  onBlur={handleResponsiblePersonBlur}
-                />
+                <select value={responsibleUserId} onChange={handleResponsibleUserChange}>
+                  <option value="">Unassigned</option>
+                  {assignableUsers.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {formatUserName(u)}
+                    </option>
+                  ))}
+                </select>
               ) : (
                 project.responsible_person || <span className="muted">Unassigned</span>
               )}
@@ -406,7 +409,7 @@ export default function ProjectDetail() {
               <option value="">Unassigned</option>
               {assignableUsers.map((u) => (
                 <option key={u.id} value={u.id}>
-                  {u.email}
+                  {formatUserName(u)}
                 </option>
               ))}
             </select>

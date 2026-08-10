@@ -2,7 +2,13 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 
-export default function CompanyDepartmentFields({ company, department, onCompanyChange, onDepartmentChange }) {
+export default function CompanyDepartmentFields({
+  company,
+  department,
+  onCompanyChange,
+  onDepartmentChange,
+  onIdsChange,
+}) {
   const [companies, setCompanies] = useState(null);
   const [companyId, setCompanyId] = useState('');
 
@@ -20,6 +26,7 @@ export default function CompanyDepartmentFields({ company, department, onCompany
     onDepartmentChange('');
     const selected = companies.find((c) => String(c.id) === value);
     onCompanyChange(selected ? selected.name : '');
+    onIdsChange?.(value ? Number(value) : null, null);
     if (value) api.getCompanyDepartments(value).then(setDepartments).catch(() => setDepartments([]));
   }
 
@@ -27,6 +34,7 @@ export default function CompanyDepartmentFields({ company, department, onCompany
     setDepartmentId(value);
     const selected = departments.find((d) => String(d.id) === value);
     onDepartmentChange(selected ? selected.name : '');
+    onIdsChange?.(companyId ? Number(companyId) : null, value ? Number(value) : null);
   }
 
   if (companies && companies.length === 0) {

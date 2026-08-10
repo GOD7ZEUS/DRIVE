@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
+import { formatUserName } from '../userDisplay.js';
 
 const TASK_STATUSES = ['todo', 'in_progress', 'done'];
 
@@ -127,7 +128,7 @@ export default function TaskDetail() {
               <option value="">Unassigned</option>
               {assignableUsers.map((u) => (
                 <option key={u.id} value={u.id}>
-                  {u.email}
+                  {formatUserName(u)}
                 </option>
               ))}
             </select>

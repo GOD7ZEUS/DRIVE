@@ -16,10 +16,10 @@ router.get('/', async (req, res, next) => {
     // The master account is invisible to regular super admins — only master sees master.
     const users = req.user.is_master
       ? await all(
-          'SELECT id, email, role, company, department, company_id, department_id, is_master, created_at FROM users ORDER BY created_at ASC'
+          'SELECT id, email, first_name, last_name, role, company, department, company_id, department_id, is_master, created_at FROM users ORDER BY created_at ASC'
         )
       : await all(
-          `SELECT id, email, role, company, department, company_id, department_id, is_master, created_at
+          `SELECT id, email, first_name, last_name, role, company, department, company_id, department_id, is_master, created_at
            FROM users WHERE is_master = 0 ORDER BY created_at ASC`
         );
     res.json(users);
@@ -30,9 +30,12 @@ router.get('/', async (req, res, next) => {
 
 router.post('/', async (req, res, next) => {
   try {
-    const { email, password, role, company, department } = req.body;
+    const { email, password, role, company, department, first_name, last_name } = req.body;
     if (!email || !password || !role) {
       return res.status(400).json({ error: 'email, password, and role are required' });
+    }
+    if (!first_name || !first_name.trim() || !last_name || !last_name.trim()) {
+      return res.status(400).json({ error: 'first name and last name are required' });
     }
     if (!allowedRoles(req).includes(role)) {
       return res.status(400).json({ error: `role must be one of ${allowedRoles(req).join(', ')}` });
@@ -60,20 +63,22 @@ router.post('/', async (req, res, next) => {
 
     const passwordHash = bcrypt.hashSync(password, 10);
     const result = await run(
-      `INSERT INTO users (email, password_hash, role, company, department, company_id, department_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO users (email, password_hash, role, company, department, company_id, department_id, first_name, last_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       email.toLowerCase(),
       passwordHash,
       role,
       companyRow.name,
       departmentRow.name,
       companyRow.id,
-      departmentRow.id
+      departmentRow.id,
+      first_name.trim(),
+      last_name.trim()
     );
 
     res.status(201).json(
       await get(
-        'SELECT id, email, role, company, department, company_id, department_id, is_master, created_at FROM users WHERE id = ?',
+        'SELECT id, email, first_name, last_name, role, company, department, company_id, department_id, is_master, created_at FROM users WHERE id = ?',
         result.lastInsertRowid
       )
     );
@@ -115,7 +120,7 @@ router.patch('/:id', async (req, res, next) => {
 
     res.json(
       await get(
-        'SELECT id, email, role, company, department, company_id, department_id, is_master, created_at FROM users WHERE id = ?',
+        'SELECT id, email, first_name, last_name, role, company, department, company_id, department_id, is_master, created_at FROM users WHERE id = ?',
         req.params.id
       )
     );

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { get, all, run, getOrCreateCompany, getOrCreateDepartment } from '../db.js';
+import { get, all, run, getOrCreateCompany, getOrCreateDepartment, displayName } from '../db.js';
 import { requireRole, matchesScope, scopeClause } from '../middleware/auth.js';
 import { sendTaskAssignedEmail } from '../notifications.js';
 
@@ -26,7 +26,7 @@ router.get('/', async (req, res, next) => {
 
 router.post('/', canEdit, async (req, res, next) => {
   try {
-    const { name, description = '', status = 'planning', responsible_person = '', deadline = null } = req.body;
+    const { name, description = '', status = 'planning', responsible_user_id = null, deadline = null } = req.body;
     if (!name || !name.trim()) {
       return res.status(400).json({ error: 'name is required' });
     }
@@ -48,9 +48,24 @@ router.post('/', canEdit, async (req, res, next) => {
       departmentRow = { id: req.user.department_id, name: req.user.department };
     }
 
+    let responsibleUser = null;
+    if (responsible_user_id) {
+      responsibleUser = await get(
+        'SELECT * FROM users WHERE id = ? AND company_id = ? AND department_id = ?',
+        responsible_user_id,
+        companyRow.id,
+        departmentRow.id
+      );
+      if (!responsibleUser) {
+        return res
+          .status(400)
+          .json({ error: "responsible person must be an existing user in this project's company and department" });
+      }
+    }
+
     const result = await run(
-      `INSERT INTO projects (name, description, status, company, department, company_id, department_id, responsible_person, deadline, original_deadline)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO projects (name, description, status, company, department, company_id, department_id, responsible_person, responsible_user_id, deadline, original_deadline)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       name.trim(),
       description,
       status,
@@ -58,12 +73,38 @@ router.post('/', canEdit, async (req, res, next) => {
       departmentRow.name,
       companyRow.id,
       departmentRow.id,
-      responsible_person,
+      responsibleUser ? displayName(responsibleUser) : '',
+      responsibleUser ? responsibleUser.id : null,
       deadline,
       deadline
     );
     const project = await get('SELECT * FROM projects WHERE id = ?', result.lastInsertRowid);
     res.status(201).json(project);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Company/department-scoped user lookup for pickers that run before a project
+// exists yet (e.g. the "Responsible Person" dropdown on the New Project form).
+// Registered before the `/:id` routes below so "assignable-users" isn't
+// swallowed as an :id value.
+router.get('/assignable-users', async (req, res, next) => {
+  try {
+    const companyId = Number(req.query.companyId);
+    const departmentId = Number(req.query.departmentId);
+    if (!companyId || !departmentId) return res.json([]);
+    if (req.user.role !== 'super_admin') {
+      if (companyId !== req.user.company_id || departmentId !== req.user.department_id) {
+        return res.status(403).json({ error: 'forbidden' });
+      }
+    }
+    const users = await all(
+      'SELECT id, email, first_name, last_name, role FROM users WHERE company_id = ? AND department_id = ? ORDER BY email ASC',
+      companyId,
+      departmentId
+    );
+    res.json(users);
   } catch (err) {
     next(err);
   }
@@ -84,9 +125,32 @@ router.patch('/:id', canEdit, async (req, res, next) => {
     const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
     if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
 
-    const { name, description, status, responsible_person, deadline } = req.body;
+    const { name, description, status, responsible_user_id, deadline } = req.body;
     if (status !== undefined && !PROJECT_STATUSES.includes(status)) {
       return res.status(400).json({ error: `status must be one of ${PROJECT_STATUSES.join(', ')}` });
+    }
+
+    let responsiblePersonText = project.responsible_person;
+    let newResponsibleUserId = project.responsible_user_id;
+    if (responsible_user_id !== undefined) {
+      if (responsible_user_id === null) {
+        newResponsibleUserId = null;
+        responsiblePersonText = '';
+      } else {
+        const responsibleUser = await get(
+          'SELECT * FROM users WHERE id = ? AND company_id = ? AND department_id = ?',
+          responsible_user_id,
+          project.company_id,
+          project.department_id
+        );
+        if (!responsibleUser) {
+          return res
+            .status(400)
+            .json({ error: "responsible person must be an existing user in this project's company and department" });
+        }
+        newResponsibleUserId = responsibleUser.id;
+        responsiblePersonText = displayName(responsibleUser);
+      }
     }
 
     // Deadline permission split: Super Admin can change the deadline in place
@@ -117,13 +181,14 @@ router.patch('/:id', canEdit, async (req, res, next) => {
 
     await run(
       `UPDATE projects SET
-        name = ?, description = ?, status = ?, responsible_person = ?, deadline = ?, original_deadline = ?,
+        name = ?, description = ?, status = ?, responsible_person = ?, responsible_user_id = ?, deadline = ?, original_deadline = ?,
         completed_at = ?, updated_at = datetime('now')
        WHERE id = ?`,
       name !== undefined ? name : project.name,
       description !== undefined ? description : project.description,
       status !== undefined ? status : project.status,
-      responsible_person !== undefined ? responsible_person : project.responsible_person,
+      responsiblePersonText,
+      newResponsibleUserId,
       deadline !== undefined ? deadline : project.deadline,
       originalDeadline,
       completedAt,
@@ -193,7 +258,7 @@ router.get('/:id/assignable-users', async (req, res, next) => {
     if (!project.company_id || !project.department_id) return res.json([]);
 
     const users = await all(
-      'SELECT id, email, role FROM users WHERE company_id = ? AND department_id = ? ORDER BY email ASC',
+      'SELECT id, email, first_name, last_name, role FROM users WHERE company_id = ? AND department_id = ? ORDER BY email ASC',
       project.company_id,
       project.department_id
     );
@@ -256,7 +321,7 @@ router.post('/:id/tasks', canEdit, async (req, res, next) => {
       milestone_id,
       title.trim(),
       description,
-      assigneeUser ? assigneeUser.email : '',
+      assigneeUser ? displayName(assigneeUser) : '',
       assigneeUser ? assigneeUser.id : null,
       status,
       due_date
