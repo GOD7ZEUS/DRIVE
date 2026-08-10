@@ -12,6 +12,7 @@ export default function ProjectDetail() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const canEdit = user.role !== 'view';
+  const isSuperAdmin = user.role === 'super_admin';
   const [project, setProject] = useState(null);
   const [milestones, setMilestones] = useState([]);
   const [tasks, setTasks] = useState([]);
@@ -25,6 +26,9 @@ export default function ProjectDetail() {
   const [showMilestoneForm, setShowMilestoneForm] = useState(false);
   const [milestoneTitle, setMilestoneTitle] = useState('');
   const [milestoneDue, setMilestoneDue] = useState('');
+  const [editingMilestoneId, setEditingMilestoneId] = useState(null);
+  const [editMilestoneTitle, setEditMilestoneTitle] = useState('');
+  const [editMilestoneDue, setEditMilestoneDue] = useState('');
 
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [taskTitle, setTaskTitle] = useState('');
@@ -87,6 +91,28 @@ export default function ProjectDetail() {
     load();
   }
 
+  function startEditMilestone(m) {
+    setEditingMilestoneId(m.id);
+    setEditMilestoneTitle(m.title);
+    setEditMilestoneDue(m.due_date || '');
+  }
+
+  async function handleSaveMilestoneEdit(e) {
+    e.preventDefault();
+    await api.updateMilestone(editingMilestoneId, {
+      title: editMilestoneTitle,
+      due_date: editMilestoneDue || null,
+    });
+    setEditingMilestoneId(null);
+    load();
+  }
+
+  async function handleDeleteMilestone(m) {
+    if (!confirm(`Delete milestone "${m.title}"? Its tasks will become unassigned from it.`)) return;
+    await api.deleteMilestone(m.id);
+    load();
+  }
+
   async function handleAddTask(e) {
     e.preventDefault();
     if (!taskTitle.trim()) return;
@@ -108,6 +134,13 @@ export default function ProjectDetail() {
   if (!project) return <p className="muted">Loading…</p>;
 
   const visibleTasks = taskFilter === 'all' ? tasks : tasks.filter((t) => t.status === taskFilter);
+  const today = new Date().toISOString().slice(0, 10);
+  const deadlineCrossed = !!(project.deadline && project.deadline < today);
+  // Admin can only set/revise the deadline when there isn't one yet or the
+  // current one has already passed; Super Admin can change it anytime.
+  const canEditDeadlineNow = isSuperAdmin || !project.deadline || deadlineCrossed;
+  const tatDeadline = project.original_deadline || project.deadline;
+  const deadlineWasRevised = project.original_deadline && project.original_deadline !== project.deadline;
 
   return (
     <div>
@@ -160,25 +193,39 @@ export default function ProjectDetail() {
           <tr>
             <th>Deadline</th>
             <td>
-              {canEdit ? (
+              {canEdit && canEditDeadlineNow ? (
                 <input type="date" value={deadline} onChange={handleDeadlineChange} />
               ) : (
-                project.deadline || <span className="muted">No deadline</span>
+                <>
+                  {project.deadline || <span className="muted">No deadline</span>}
+                  {canEdit && (
+                    <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                      Only Super Admin can change this before it passes.
+                    </div>
+                  )}
+                </>
               )}
             </td>
           </tr>
+          {deadlineWasRevised && (
+            <tr>
+              <th>Original Deadline</th>
+              <td>
+                {project.original_deadline}{' '}
+                <span className="muted">· revised to {project.deadline || '—'}</span>
+              </td>
+            </tr>
+          )}
           {project.completed_at && (
             <tr>
               <th>Completed</th>
               <td>
                 {project.completed_at.slice(0, 10)}
-                {project.deadline && (
+                {tatDeadline && (
                   <span className="muted">
                     {' '}
                     ·{' '}
-                    {project.completed_at.slice(0, 10) <= project.deadline
-                      ? 'within TAT'
-                      : 'exceeded TAT'}
+                    {project.completed_at.slice(0, 10) <= tatDeadline ? 'within TAT' : 'exceeded TAT'}
                   </span>
                 )}
               </td>
@@ -253,22 +300,77 @@ export default function ProjectDetail() {
           <p className="muted">No milestones yet.</p>
         ) : (
           <div className="list">
-            {milestones.map((m) => (
-              <div key={m.id} className="list-item">
-                <div>
-                  <div className="title">{m.title}</div>
-                  {m.due_date && <div className="muted">Due {m.due_date}</div>}
-                </div>
-                <div className="row">
-                  <StatusBadge status={m.status} />
-                  {canEdit && (
-                    <button onClick={() => toggleMilestoneDone(m)}>
-                      {m.status === 'done' ? 'Reopen' : 'Mark done'}
-                    </button>
+            {milestones.map((m) => {
+              const milestoneTasks = tasks.filter((t) => t.milestone_id === m.id);
+              return (
+                <div key={m.id} className="milestone-block">
+                  {editingMilestoneId === m.id ? (
+                    <form
+                      className="inline-form panel"
+                      onSubmit={handleSaveMilestoneEdit}
+                      style={{ marginBottom: 8 }}
+                    >
+                      <input
+                        value={editMilestoneTitle}
+                        onChange={(e) => setEditMilestoneTitle(e.target.value)}
+                        required
+                        autoFocus
+                      />
+                      <input
+                        type="date"
+                        value={editMilestoneDue}
+                        onChange={(e) => setEditMilestoneDue(e.target.value)}
+                      />
+                      <button type="submit" className="primary">
+                        Save
+                      </button>
+                      <button type="button" onClick={() => setEditingMilestoneId(null)}>
+                        Cancel
+                      </button>
+                    </form>
+                  ) : (
+                    <div className="list-item">
+                      <div>
+                        <div className="title">{m.title}</div>
+                        {m.due_date && <div className="muted">Due {m.due_date}</div>}
+                      </div>
+                      <div className="row">
+                        <StatusBadge status={m.status} />
+                        {canEdit && (
+                          <button onClick={() => toggleMilestoneDone(m)}>
+                            {m.status === 'done' ? 'Reopen' : 'Mark done'}
+                          </button>
+                        )}
+                        {isSuperAdmin && (
+                          <>
+                            <button onClick={() => startEditMilestone(m)}>Edit</button>
+                            <button className="danger" onClick={() => handleDeleteMilestone(m)}>
+                              Delete
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {milestoneTasks.length > 0 && (
+                    <div className="milestone-tasks">
+                      {milestoneTasks.map((t) => (
+                        <Link key={t.id} to={`/tasks/${t.id}`} className="list-item nested">
+                          <div>
+                            <div className="title">{t.title}</div>
+                            <div className="muted">
+                              {t.assignee ? `${t.assignee} · ` : ''}
+                              {t.due_date ? `due ${t.due_date}` : 'no due date'}
+                            </div>
+                          </div>
+                          <StatusBadge status={t.status} />
+                        </Link>
+                      ))}
+                    </div>
                   )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

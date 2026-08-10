@@ -4,6 +4,7 @@ import { requireRole, matchesScope } from '../middleware/auth.js';
 
 const router = Router();
 const canEdit = requireRole('super_admin', 'admin');
+const superAdminOnly = requireRole('super_admin');
 const MILESTONE_STATUSES = ['pending', 'done'];
 
 async function loadScopedMilestone(req) {
@@ -23,6 +24,12 @@ router.patch('/:id', canEdit, async (req, res, next) => {
     if (status !== undefined && !MILESTONE_STATUSES.includes(status)) {
       return res.status(400).json({ error: `status must be one of ${MILESTONE_STATUSES.join(', ')}` });
     }
+    // Marking a milestone done/reopening it is everyday progress tracking,
+    // open to Admins. Changing its title/due date is a structural edit,
+    // reserved for Super Admin.
+    if ((title !== undefined || due_date !== undefined) && req.user.role !== 'super_admin') {
+      return res.status(403).json({ error: 'only Super Admin can edit milestone details' });
+    }
 
     await run(
       `UPDATE milestones SET title = ?, due_date = ?, status = ?, sort_order = ? WHERE id = ?`,
@@ -39,10 +46,13 @@ router.patch('/:id', canEdit, async (req, res, next) => {
   }
 });
 
-router.delete('/:id', canEdit, async (req, res, next) => {
+router.delete('/:id', superAdminOnly, async (req, res, next) => {
   try {
     const milestone = await loadScopedMilestone(req);
     if (!milestone) return res.status(404).json({ error: 'milestone not found' });
+    // Tasks that pointed at this milestone become unassigned rather than
+    // left referencing a milestone that no longer exists.
+    await run('UPDATE tasks SET milestone_id = NULL WHERE milestone_id = ?', req.params.id);
     await run('DELETE FROM milestones WHERE id = ?', req.params.id);
     res.status(204).end();
   } catch (err) {

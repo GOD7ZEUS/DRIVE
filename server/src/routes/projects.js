@@ -49,8 +49,8 @@ router.post('/', canEdit, async (req, res, next) => {
     }
 
     const result = await run(
-      `INSERT INTO projects (name, description, status, company, department, company_id, department_id, responsible_person, deadline)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO projects (name, description, status, company, department, company_id, department_id, responsible_person, deadline, original_deadline)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       name.trim(),
       description,
       status,
@@ -59,6 +59,7 @@ router.post('/', canEdit, async (req, res, next) => {
       companyRow.id,
       departmentRow.id,
       responsible_person,
+      deadline,
       deadline
     );
     const project = await get('SELECT * FROM projects WHERE id = ?', result.lastInsertRowid);
@@ -88,6 +89,24 @@ router.patch('/:id', canEdit, async (req, res, next) => {
       return res.status(400).json({ error: `status must be one of ${PROJECT_STATUSES.join(', ')}` });
     }
 
+    // Deadline permission split: Super Admin can change the deadline in place
+    // at any time. Admin can only set/revise it when there either isn't one
+    // yet or the current one has already passed — they can't move up a
+    // still-future deadline. original_deadline is captured once, the first
+    // time a deadline is ever set, and never overwritten again, so TAT
+    // reporting keeps measuring against the baseline commitment even after
+    // a revision.
+    if (deadline !== undefined && deadline !== project.deadline && req.user.role !== 'super_admin') {
+      const today = new Date().toISOString().slice(0, 10);
+      if (project.deadline && project.deadline >= today) {
+        return res.status(403).json({ error: 'only Super Admin can change the deadline before it has passed' });
+      }
+    }
+    let originalDeadline = project.original_deadline;
+    if (deadline !== undefined && deadline !== null && !originalDeadline) {
+      originalDeadline = deadline;
+    }
+
     // Track when a project actually finished (for TAT reporting), separate from
     // updated_at which changes on any edit. Re-opening a completed project
     // clears it, so re-completing it later records a fresh completion date.
@@ -98,7 +117,7 @@ router.patch('/:id', canEdit, async (req, res, next) => {
 
     await run(
       `UPDATE projects SET
-        name = ?, description = ?, status = ?, responsible_person = ?, deadline = ?,
+        name = ?, description = ?, status = ?, responsible_person = ?, deadline = ?, original_deadline = ?,
         completed_at = ?, updated_at = datetime('now')
        WHERE id = ?`,
       name !== undefined ? name : project.name,
@@ -106,6 +125,7 @@ router.patch('/:id', canEdit, async (req, res, next) => {
       status !== undefined ? status : project.status,
       responsible_person !== undefined ? responsible_person : project.responsible_person,
       deadline !== undefined ? deadline : project.deadline,
+      originalDeadline,
       completedAt,
       req.params.id
     );

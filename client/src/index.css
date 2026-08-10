@@ -543,6 +543,26 @@ a.list-item:hover {
   font-weight: 500;
 }
 
+.milestone-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.milestone-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-left: 24px;
+  padding-left: 12px;
+  border-left: 2px solid var(--border);
+}
+
+.list-item.nested {
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
 .muted {
   opacity: 0.7;
   font-size: 13px;

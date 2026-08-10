@@ -97,9 +97,11 @@ router.get('/', async (req, res, next) => {
 
     // TAT (turn-around time): for a completed project, the days from creation
     // to completion. "In TAT" / "exceeding TAT" is measured against the
-    // project's deadline — completed late, or still open and past its
-    // deadline, counts as exceeding. Projects with no deadline set are
-    // excluded, since there's nothing to measure against.
+    // project's ORIGINAL deadline (falling back to the current one for
+    // projects created before original_deadline existed) — a deadline that
+    // gets revised later shouldn't retroactively make a late project look
+    // on-time. Projects with no deadline set are excluded, since there's
+    // nothing to measure against.
     const avgTatRow = await all(
       `SELECT AVG(julianday(completed_at) - julianday(created_at)) as avg_tat_days
        FROM projects
@@ -109,26 +111,26 @@ router.get('/', async (req, res, next) => {
     const avgTatDays = avgTatRow[0]?.avg_tat_days != null ? Math.round(avgTatRow[0].avg_tat_days * 10) / 10 : null;
 
     const projectsExceedingTat = await all(
-      `SELECT * FROM projects
-       WHERE deadline IS NOT NULL
+      `SELECT *, COALESCE(original_deadline, deadline) as tat_deadline FROM projects
+       WHERE COALESCE(original_deadline, deadline) IS NOT NULL
          AND (
-           (status = 'completed' AND completed_at IS NOT NULL AND date(completed_at) > date(deadline))
-           OR (status != 'completed' AND date(deadline) < date('now'))
+           (status = 'completed' AND completed_at IS NOT NULL AND date(completed_at) > date(COALESCE(original_deadline, deadline)))
+           OR (status != 'completed' AND date(COALESCE(original_deadline, deadline)) < date('now'))
          )
          ${projectScopeAnd}
-       ORDER BY deadline ASC`,
+       ORDER BY tat_deadline ASC`,
       ...projectParams
     );
 
     const projectsInTat = await all(
-      `SELECT * FROM projects
-       WHERE deadline IS NOT NULL
+      `SELECT *, COALESCE(original_deadline, deadline) as tat_deadline FROM projects
+       WHERE COALESCE(original_deadline, deadline) IS NOT NULL
          AND (
-           (status = 'completed' AND completed_at IS NOT NULL AND date(completed_at) <= date(deadline))
-           OR (status != 'completed' AND date(deadline) >= date('now'))
+           (status = 'completed' AND completed_at IS NOT NULL AND date(completed_at) <= date(COALESCE(original_deadline, deadline)))
+           OR (status != 'completed' AND date(COALESCE(original_deadline, deadline)) >= date('now'))
          )
          ${projectScopeAnd}
-       ORDER BY deadline ASC`,
+       ORDER BY tat_deadline ASC`,
       ...projectParams
     );
 
