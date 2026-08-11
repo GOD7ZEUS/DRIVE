@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
@@ -7,6 +7,12 @@ import { formatUserName } from '../userDisplay.js';
 
 const PROJECT_STATUSES = ['planning', 'active', 'on_hold', 'completed'];
 const TASK_STATUSES = ['todo', 'in_progress', 'done'];
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export default function ProjectDetail() {
   const { id } = useParams();
@@ -18,8 +24,13 @@ export default function ProjectDetail() {
   const [milestones, setMilestones] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [assignableUsers, setAssignableUsers] = useState([]);
+  const [plans, setPlans] = useState([]);
   const [error, setError] = useState('');
   const [taskFilter, setTaskFilter] = useState('all');
+
+  const planFileInputRef = useRef(null);
+  const [uploadingPlan, setUploadingPlan] = useState(false);
+  const [planError, setPlanError] = useState('');
 
   const [responsibleUserId, setResponsibleUserId] = useState('');
   const [deadline, setDeadline] = useState('');
@@ -38,12 +49,19 @@ export default function ProjectDetail() {
   const [taskMilestone, setTaskMilestone] = useState('');
 
   function load() {
-    Promise.all([api.getProject(id), api.getMilestones(id), api.getProjectTasks(id), api.getAssignableUsers(id)])
-      .then(([p, m, t, u]) => {
+    Promise.all([
+      api.getProject(id),
+      api.getMilestones(id),
+      api.getProjectTasks(id),
+      api.getAssignableUsers(id),
+      api.getPlans(id),
+    ])
+      .then(([p, m, t, u, pl]) => {
         setProject(p);
         setMilestones(m);
         setTasks(t);
         setAssignableUsers(u);
+        setPlans(pl);
         setResponsibleUserId(p.responsible_user_id || '');
         setDeadline(p.deadline || '');
       })
@@ -128,6 +146,28 @@ export default function ProjectDetail() {
     setTaskDue('');
     setTaskMilestone('');
     setShowTaskForm(false);
+    load();
+  }
+
+  async function handlePlanFileSelected(e) {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    setPlanError('');
+    setUploadingPlan(true);
+    try {
+      await api.uploadPlan(id, file);
+      load();
+    } catch (err) {
+      setPlanError(err.message);
+    } finally {
+      setUploadingPlan(false);
+    }
+  }
+
+  async function handleDeletePlan(p) {
+    if (!confirm(`Delete plan "${p.filename}"? This cannot be undone.`)) return;
+    await api.deletePlan(id, p.id);
     load();
   }
 
@@ -272,6 +312,62 @@ export default function ProjectDetail() {
           </tr>
         </tbody>
       </table>
+
+      <div className="section">
+        <div className="row-between">
+          <h2>Plan Documents</h2>
+          {canEdit && (
+            <>
+              <input
+                ref={planFileInputRef}
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg"
+                style={{ display: 'none' }}
+                onChange={handlePlanFileSelected}
+              />
+              <button onClick={() => planFileInputRef.current?.click()} disabled={uploadingPlan}>
+                {uploadingPlan ? 'Uploading…' : 'Upload New Plan'}
+              </button>
+            </>
+          )}
+        </div>
+
+        <p className="muted" style={{ marginBottom: 12 }}>
+          PDF, PNG, or JPG, up to 5 MB. The most recent upload is the final plan — every earlier version
+          stays available below it.
+        </p>
+        {planError && <p className="error">{planError}</p>}
+
+        {plans.length === 0 ? (
+          <p className="muted">No plan documents uploaded yet.</p>
+        ) : (
+          <div className="list">
+            {plans.map((p, i) => (
+              <div key={p.id} className="list-item">
+                <div>
+                  <div className="title">
+                    {p.filename} {i === 0 && <span className="key-tag">FINAL</span>}
+                  </div>
+                  <div className="muted">
+                    {formatFileSize(p.size_bytes)}
+                    {p.uploaded_by ? ` · Uploaded by ${p.uploaded_by}` : ''} · {p.created_at}
+                  </div>
+                </div>
+                <div className="row">
+                  <button type="button" onClick={() => window.open(api.getPlanDownloadUrl(id, p.id), '_blank')}>
+                    View
+                  </button>
+                  {isSuperAdmin && (
+                    <button className="danger" onClick={() => handleDeletePlan(p)}>
+                      Delete
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="section">
         <div className="row-between">

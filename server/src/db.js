@@ -104,6 +104,17 @@ await db.executeMultiple(`
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(company_id, name)
   );
+
+  CREATE TABLE IF NOT EXISTS project_plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    filename TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    data BLOB NOT NULL,
+    uploaded_by TEXT DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
 
 async function ensureColumn(table, column, definition) {

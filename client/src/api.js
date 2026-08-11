@@ -48,6 +48,26 @@ export const api = {
   createComment: (taskId, data) =>
     request(`/tasks/${taskId}/comments`, { method: 'POST', body: JSON.stringify(data) }),
 
+  getPlans: (projectId) => request(`/projects/${projectId}/plans`),
+  uploadPlan: async (projectId, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${BASE_URL}/projects/${projectId}/plans`, {
+      method: 'POST',
+      credentials: 'include',
+      body: formData,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const error = new Error(body.error || `Request failed: ${res.status}`);
+      error.status = res.status;
+      throw error;
+    }
+    return res.json();
+  },
+  deletePlan: (projectId, planId) => request(`/projects/${projectId}/plans/${planId}`, { method: 'DELETE' }),
+  getPlanDownloadUrl: (projectId, planId) => `${BASE_URL}/projects/${projectId}/plans/${planId}/download`,
+
   getDashboard: (companyId, departmentId) => {
     const params = new URLSearchParams();
     if (companyId) params.set('companyId', companyId);

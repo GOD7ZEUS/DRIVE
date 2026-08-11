@@ -40,7 +40,7 @@ export async function requireAuth(req, res, next) {
     // Re-check the DB on every request so a deleted/edited account loses access
     // immediately instead of staying valid until the JWT's 7-day expiry.
     const user = await get(
-      'SELECT id, email, role, company, department, company_id, department_id, is_master, security_question FROM users WHERE id = ?',
+      'SELECT id, email, first_name, last_name, role, company, department, company_id, department_id, is_master, security_question FROM users WHERE id = ?',
       payload.id
     );
     if (!user) {

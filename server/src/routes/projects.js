@@ -1,12 +1,31 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { get, all, run, getOrCreateCompany, getOrCreateDepartment, displayName } from '../db.js';
 import { requireRole, matchesScope, scopeClause } from '../middleware/auth.js';
 import { sendTaskAssignedEmail } from '../notifications.js';
 
 const router = Router();
 const canEdit = requireRole('super_admin', 'admin');
+const superAdminOnly = requireRole('super_admin');
 
 const PROJECT_STATUSES = ['planning', 'active', 'on_hold', 'completed'];
+
+// Plan documents are kept as small BLOBs in the same database as everything
+// else rather than on local disk — Render's free tier disk is wiped on every
+// redeploy, which would silently lose every uploaded plan. The size cap
+// keeps that comfortably within a normal database's storage budget.
+const MAX_PLAN_SIZE = 5 * 1024 * 1024;
+const ALLOWED_PLAN_MIME_TYPES = new Set(['application/pdf', 'image/png', 'image/jpeg']);
+const planUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_PLAN_SIZE },
+  fileFilter: (req, file, cb) => {
+    if (!ALLOWED_PLAN_MIME_TYPES.has(file.mimetype)) {
+      return cb(new Error('only PDF, PNG, or JPG files are allowed'));
+    }
+    cb(null, true);
+  },
+});
 
 router.get('/', async (req, res, next) => {
   try {
@@ -298,6 +317,93 @@ router.post('/:id/tasks', canEdit, async (req, res, next) => {
     const task = await get('SELECT * FROM tasks WHERE id = ?', result.lastInsertRowid);
     if (assigneeUser) sendTaskAssignedEmail(assigneeUser.email, task, project);
     res.status(201).json(task);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Plan documents: every uploaded version is kept (never overwritten), newest
+// first, so the most recent one is always the current/"final" plan while
+// earlier revisions stay available for reference. Uploading is Admin+Super
+// Admin, same as everything else on a project; deleting an old version is
+// Super Admin only, mirroring the milestone edit/delete split.
+router.get('/:id/plans', async (req, res, next) => {
+  try {
+    const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
+    if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
+    const plans = await all(
+      `SELECT id, filename, mime_type, size_bytes, uploaded_by, created_at
+       FROM project_plans WHERE project_id = ? ORDER BY id DESC`,
+      req.params.id
+    );
+    res.json(plans);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/:id/plans', canEdit, (req, res, next) => {
+  planUpload.single('file')(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    next();
+  });
+}, async (req, res, next) => {
+  try {
+    const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
+    if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
+    if (!req.file) return res.status(400).json({ error: 'file is required' });
+
+    const result = await run(
+      `INSERT INTO project_plans (project_id, filename, mime_type, size_bytes, data, uploaded_by)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      req.params.id,
+      req.file.originalname,
+      req.file.mimetype,
+      req.file.size,
+      req.file.buffer,
+      displayName(req.user)
+    );
+    const plan = await get(
+      `SELECT id, filename, mime_type, size_bytes, uploaded_by, created_at
+       FROM project_plans WHERE id = ?`,
+      result.lastInsertRowid
+    );
+    res.status(201).json(plan);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/:id/plans/:planId/download', async (req, res, next) => {
+  try {
+    const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
+    if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
+    const plan = await get(
+      'SELECT * FROM project_plans WHERE id = ? AND project_id = ?',
+      req.params.planId,
+      req.params.id
+    );
+    if (!plan) return res.status(404).json({ error: 'plan not found' });
+    res.set('Content-Type', plan.mime_type);
+    res.set('Content-Disposition', `inline; filename="${encodeURIComponent(plan.filename)}"`);
+    res.send(Buffer.from(plan.data));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/:id/plans/:planId', superAdminOnly, async (req, res, next) => {
+  try {
+    const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
+    if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
+    const plan = await get(
+      'SELECT id FROM project_plans WHERE id = ? AND project_id = ?',
+      req.params.planId,
+      req.params.id
+    );
+    if (!plan) return res.status(404).json({ error: 'plan not found' });
+    await run('DELETE FROM project_plans WHERE id = ?', req.params.planId);
+    res.status(204).end();
   } catch (err) {
     next(err);
   }
