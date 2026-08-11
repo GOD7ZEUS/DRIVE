@@ -34,6 +34,7 @@ export default function ProjectDetail() {
 
   const [responsibleUserId, setResponsibleUserId] = useState('');
   const [deadline, setDeadline] = useState('');
+  const [showDetails, setShowDetails] = useState(false);
 
   const [showMilestoneForm, setShowMilestoneForm] = useState(false);
   const [milestoneTitle, setMilestoneTitle] = useState('');
@@ -191,13 +192,19 @@ export default function ProjectDetail() {
 
       <div className="row-between">
         <h1>{project.name}</h1>
-        {canEdit && (
-          <button className="danger" onClick={handleDeleteProject}>
-            Delete
+        <div className="row">
+          <button onClick={() => setShowDetails((s) => !s)}>
+            {showDetails ? 'Hide Details' : canEdit ? 'Edit' : 'View Details'}
           </button>
-        )}
+          {canEdit && (
+            <button className="danger" onClick={handleDeleteProject}>
+              Delete
+            </button>
+          )}
+        </div>
       </div>
 
+      {showDetails && (
       <table className="detail-table">
         <tbody>
           <tr>
@@ -312,6 +319,7 @@ export default function ProjectDetail() {
           </tr>
         </tbody>
       </table>
+      )}
 
       <div className="section">
         <div className="row-between">
