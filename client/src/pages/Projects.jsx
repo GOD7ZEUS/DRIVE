@@ -20,7 +20,6 @@ export default function Projects() {
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState('planning');
   const [responsibleUserId, setResponsibleUserId] = useState('');
-  const [deadline, setDeadline] = useState('');
   const [company, setCompany] = useState('');
   const [department, setDepartment] = useState('');
   const [assignableUsers, setAssignableUsers] = useState([]);
@@ -81,7 +80,6 @@ export default function Projects() {
         description,
         status,
         responsible_user_id: responsibleUserId || null,
-        deadline: deadline || null,
       };
       if (isSuperAdmin) {
         payload.company = company;
@@ -92,7 +90,6 @@ export default function Projects() {
       setDescription('');
       setStatus('planning');
       setResponsibleUserId('');
-      setDeadline('');
       setCompany('');
       setDepartment('');
       setAssignableUsers([]);
@@ -175,11 +172,6 @@ export default function Projects() {
               ))}
             </select>
           </label>
-          <label>
-            Deadline
-            <br />
-            <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
-          </label>
           {isSuperAdmin ? (
             <CompanyDepartmentFields
               company={company}
@@ -220,11 +212,11 @@ export default function Projects() {
                 </div>
               )}
               {p.description && <div className="muted">{p.description}</div>}
-              {(p.responsible_person || p.deadline) && (
+              {(p.responsible_person || p.current_rollout_date) && (
                 <div className="muted">
                   {p.responsible_person && `Owner: ${p.responsible_person}`}
-                  {p.responsible_person && p.deadline && ' · '}
-                  {p.deadline && `Deadline: ${p.deadline}`}
+                  {p.responsible_person && p.current_rollout_date && ' · '}
+                  {p.current_rollout_date && `Rollout: ${p.current_rollout_date}`}
                 </div>
               )}
             </div>

@@ -39,7 +39,6 @@ export default function ProjectDetail() {
   const [savingRollout, setSavingRollout] = useState(false);
 
   const [responsibleUserId, setResponsibleUserId] = useState('');
-  const [deadline, setDeadline] = useState('');
   const [showDetails, setShowDetails] = useState(false);
 
   const [showMilestoneForm, setShowMilestoneForm] = useState(false);
@@ -72,7 +71,6 @@ export default function ProjectDetail() {
         setPlans(pl);
         setRolloutDates(rd);
         setResponsibleUserId(p.responsible_user_id || '');
-        setDeadline(p.deadline || '');
       })
       .catch((e) => setError(e.message));
   }
@@ -88,13 +86,6 @@ export default function ProjectDetail() {
     const value = e.target.value;
     setResponsibleUserId(value);
     await api.updateProject(id, { responsible_user_id: value || null });
-    load();
-  }
-
-  async function handleDeadlineChange(e) {
-    const value = e.target.value;
-    setDeadline(value);
-    await api.updateProject(id, { deadline: value || null });
     load();
   }
 
@@ -201,13 +192,10 @@ export default function ProjectDetail() {
   if (!project) return <p className="muted">Loading…</p>;
 
   const visibleTasks = taskFilter === 'all' ? tasks : tasks.filter((t) => t.status === taskFilter);
-  const today = new Date().toISOString().slice(0, 10);
-  const deadlineCrossed = !!(project.deadline && project.deadline < today);
-  // Admin can only set/revise the deadline when there isn't one yet or the
-  // current one has already passed; Super Admin can change it anytime.
-  const canEditDeadlineNow = isSuperAdmin || !project.deadline || deadlineCrossed;
-  const tatDeadline = project.original_deadline || project.deadline;
-  const deadlineWasRevised = project.original_deadline && project.original_deadline !== project.deadline;
+  // rolloutDates is newest-first, so the earliest (baseline) entry is the
+  // last one in the array — TAT is measured against that, not whatever the
+  // rollout date has since been revised to.
+  const tatDeadline = rolloutDates.length > 0 ? rolloutDates[rolloutDates.length - 1].rollout_date : null;
 
   return (
     <div>
@@ -271,32 +259,6 @@ export default function ProjectDetail() {
               )}
             </td>
           </tr>
-          <tr>
-            <th>Deadline</th>
-            <td>
-              {canEdit && canEditDeadlineNow ? (
-                <input type="date" value={deadline} onChange={handleDeadlineChange} />
-              ) : (
-                <>
-                  {project.deadline || <span className="muted">No deadline</span>}
-                  {canEdit && (
-                    <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-                      Only Super Admin can change this before it passes.
-                    </div>
-                  )}
-                </>
-              )}
-            </td>
-          </tr>
-          {deadlineWasRevised && (
-            <tr>
-              <th>Original Deadline</th>
-              <td>
-                {project.original_deadline}{' '}
-                <span className="muted">· revised to {project.deadline || '—'}</span>
-              </td>
-            </tr>
-          )}
           {project.completed_at && (
             <tr>
               <th>Completed</th>

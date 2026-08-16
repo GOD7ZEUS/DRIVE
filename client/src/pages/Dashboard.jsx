@@ -126,7 +126,7 @@ export default function Dashboard() {
                     <div>
                       <div className="title">{p.name}</div>
                       <div className="muted">
-                        Deadline {p.deadline}
+                        Rollout {p.tat_deadline}
                         {p.completed_at ? ` · completed ${p.completed_at.slice(0, 10)}` : ' · not yet completed'}
                       </div>
                     </div>
