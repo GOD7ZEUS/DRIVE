@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { formatUserName } from '../userDisplay.js';
+import { formatDate, formatDateTime } from '../dateFormat.js';
 
 const PROJECT_STATUSES = ['planning', 'active', 'on_hold', 'completed'];
 const TASK_STATUSES = ['todo', 'in_progress', 'done'];
@@ -204,10 +205,10 @@ export default function ProjectDetail() {
       </div>
 
       <div className="row-between">
-        <h1>
-          {project.name}
-          {rolloutDates.length > 0 && <> · {rolloutDates[0].rollout_date}</>}
-        </h1>
+        <div>
+          <h1>{project.name}</h1>
+          {rolloutDates.length > 0 && <h1>Rollout Date - {formatDate(rolloutDates[0].rollout_date)}</h1>}
+        </div>
         <div className="row">
           <button onClick={() => setShowDetails((s) => !s)}>
             {showDetails ? 'Hide Details' : canEdit ? 'Edit' : 'View Details'}
@@ -240,7 +241,7 @@ export default function ProjectDetail() {
             project.responsible_person || 'Unassigned'
           )}
         </div>
-        <div className="muted">Last updated {project.updated_at}</div>
+        <div className="muted">Last updated {formatDateTime(project.updated_at)}</div>
       </div>
 
       {showDetails && (
@@ -267,7 +268,7 @@ export default function ProjectDetail() {
             <tr>
               <th>Completed</th>
               <td>
-                {project.completed_at.slice(0, 10)}
+                {formatDate(project.completed_at)}
                 {tatDeadline && (
                   <span className="muted">
                     {' '}
@@ -308,7 +309,7 @@ export default function ProjectDetail() {
           </tr>
           <tr>
             <th>Created</th>
-            <td>{project.created_at}</td>
+            <td>{formatDateTime(project.created_at)}</td>
           </tr>
         </tbody>
       </table>
@@ -347,10 +348,10 @@ export default function ProjectDetail() {
               <div key={r.id} className="list-item">
                 <div>
                   <div className="title">
-                    {r.rollout_date} {i === 0 && <span className="key-tag">CURRENT</span>}
+                    {formatDate(r.rollout_date)} {i === 0 && <span className="key-tag">CURRENT</span>}
                   </div>
                   <div className="muted">
-                    Set by {r.set_by || 'unknown'} · {r.created_at}
+                    Set by {r.set_by || 'unknown'} · {formatDateTime(r.created_at)}
                   </div>
                 </div>
               </div>
@@ -398,7 +399,7 @@ export default function ProjectDetail() {
                   </div>
                   <div className="muted">
                     {formatFileSize(p.size_bytes)}
-                    {p.uploaded_by ? ` · Uploaded by ${p.uploaded_by}` : ''} · {p.created_at}
+                    {p.uploaded_by ? ` · Uploaded by ${p.uploaded_by}` : ''} · {formatDateTime(p.created_at)}
                   </div>
                 </div>
                 <div className="row">
@@ -482,8 +483,8 @@ export default function ProjectDetail() {
                         {m.due_date && (
                           <div className="muted">
                             {m.original_due_date && m.original_due_date !== m.due_date
-                              ? `Originally due ${m.original_due_date} · revised to ${m.due_date}`
-                              : `Due ${m.due_date}`}
+                              ? `Originally due ${formatDate(m.original_due_date)} · revised to ${formatDate(m.due_date)}`
+                              : `Due ${formatDate(m.due_date)}`}
                           </div>
                         )}
                       </div>
@@ -513,7 +514,7 @@ export default function ProjectDetail() {
                             <div className="title">{t.title}</div>
                             <div className="muted">
                               {t.assignee ? `${t.assignee} · ` : ''}
-                              {t.due_date ? `due ${t.due_date}` : 'no due date'}
+                              {t.due_date ? `due ${formatDate(t.due_date)}` : 'no due date'}
                             </div>
                           </div>
                           <StatusBadge status={t.status} />
@@ -588,7 +589,7 @@ export default function ProjectDetail() {
                   <div className="title">{t.title}</div>
                   <div className="muted">
                     {t.assignee ? `${t.assignee} · ` : ''}
-                    {t.due_date ? `due ${t.due_date}` : 'no due date'}
+                    {t.due_date ? `due ${formatDate(t.due_date)}` : 'no due date'}
                   </div>
                 </div>
                 <StatusBadge status={t.status} />

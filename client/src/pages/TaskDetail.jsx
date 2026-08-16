@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { formatUserName } from '../userDisplay.js';
+import { formatDate, formatDateTime } from '../dateFormat.js';
 
 const TASK_STATUSES = ['todo', 'in_progress', 'done'];
 
@@ -105,7 +106,7 @@ export default function TaskDetail() {
           <div className="row muted" style={{ marginBottom: 12 }}>
             <StatusBadge status={task.status} />
             {task.assignee && <span>Assigned to {task.assignee}</span>}
-            {task.due_date && <span>Due {task.due_date}</span>}
+            {task.due_date && <span>Due {formatDate(task.due_date)}</span>}
           </div>
           {task.description && <p>{task.description}</p>}
         </>
@@ -179,7 +180,7 @@ export default function TaskDetail() {
             {comments.map((c) => (
               <div key={c.id} className="comment">
                 <div className="comment-meta">
-                  {c.author || 'anonymous'} · {c.created_at}
+                  {c.author || 'anonymous'} · {formatDateTime(c.created_at)}
                 </div>
                 <div>{c.body}</div>
               </div>

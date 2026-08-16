@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
+import { formatDate } from '../dateFormat.js';
 
 const PROJECT_STATUS_ORDER = ['planning', 'active', 'on_hold', 'completed'];
 const PROJECT_STATUS_LABELS = {
@@ -126,8 +127,8 @@ export default function Dashboard() {
                     <div>
                       <div className="title">{p.name}</div>
                       <div className="muted">
-                        Rollout {p.tat_deadline}
-                        {p.completed_at ? ` · completed ${p.completed_at.slice(0, 10)}` : ' · not yet completed'}
+                        Rollout {formatDate(p.tat_deadline)}
+                        {p.completed_at ? ` · completed ${formatDate(p.completed_at)}` : ' · not yet completed'}
                       </div>
                     </div>
                     <StatusBadge status={p.status} />
@@ -149,7 +150,7 @@ export default function Dashboard() {
                       <div className="title">
                         <Link to={`/projects/${m.project_id}`}>{m.title}</Link>
                       </div>
-                      <div className="muted">Milestone · {m.project_name} · due {m.due_date}</div>
+                      <div className="muted">Milestone · {m.project_name} · due {formatDate(m.due_date)}</div>
                     </div>
                     <StatusBadge status={m.status} />
                   </div>
@@ -160,7 +161,7 @@ export default function Dashboard() {
                       <div className="title">
                         <Link to={`/tasks/${t.id}`}>{t.title}</Link>
                       </div>
-                      <div className="muted">Task · {t.project_name} · due {t.due_date}</div>
+                      <div className="muted">Task · {t.project_name} · due {formatDate(t.due_date)}</div>
                     </div>
                     <StatusBadge status={t.status} />
                   </div>
@@ -181,7 +182,7 @@ export default function Dashboard() {
                       <div className="title">
                         <Link to={`/projects/${m.project_id}`}>{m.title}</Link>
                       </div>
-                      <div className="muted">Milestone · {m.project_name} · due {m.due_date}</div>
+                      <div className="muted">Milestone · {m.project_name} · due {formatDate(m.due_date)}</div>
                     </div>
                     <StatusBadge status={m.status} />
                   </div>
@@ -192,7 +193,7 @@ export default function Dashboard() {
                       <div className="title">
                         <Link to={`/tasks/${t.id}`}>{t.title}</Link>
                       </div>
-                      <div className="muted">Task · {t.project_name} · due {t.due_date}</div>
+                      <div className="muted">Task · {t.project_name} · due {formatDate(t.due_date)}</div>
                     </div>
                     <StatusBadge status={t.status} />
                   </div>

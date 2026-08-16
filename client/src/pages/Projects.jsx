@@ -5,6 +5,7 @@ import { useAuth } from '../auth.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import CompanyDepartmentFields from '../components/CompanyDepartmentFields.jsx';
 import { formatUserName } from '../userDisplay.js';
+import { formatDate } from '../dateFormat.js';
 
 const STATUSES = ['planning', 'active', 'on_hold', 'completed'];
 
@@ -216,7 +217,7 @@ export default function Projects() {
                 <div className="muted">
                   {p.responsible_person && `Owner: ${p.responsible_person}`}
                   {p.responsible_person && p.current_rollout_date && ' · '}
-                  {p.current_rollout_date && `Rollout: ${p.current_rollout_date}`}
+                  {p.current_rollout_date && `Rollout: ${formatDate(p.current_rollout_date)}`}
                 </div>
               )}
             </div>
