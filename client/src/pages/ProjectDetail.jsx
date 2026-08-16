@@ -204,7 +204,10 @@ export default function ProjectDetail() {
       </div>
 
       <div className="row-between">
-        <h1>{project.name}</h1>
+        <h1>
+          {project.name}
+          {rolloutDates.length > 0 && <> · {rolloutDates[0].rollout_date}</>}
+        </h1>
         <div className="row">
           <button onClick={() => setShowDetails((s) => !s)}>
             {showDetails ? 'Hide Details' : canEdit ? 'Edit' : 'View Details'}
@@ -241,6 +244,7 @@ export default function ProjectDetail() {
       </div>
 
       {showDetails && (
+      <>
       <table className="detail-table">
         <tbody>
           <tr>
@@ -308,11 +312,10 @@ export default function ProjectDetail() {
           </tr>
         </tbody>
       </table>
-      )}
 
       <div className="section">
         <div className="row-between">
-          <h2>Project Rollout Date</h2>
+          <h2>Rollout Date History</h2>
           {(rolloutDates.length === 0 ? canEdit : isSuperAdmin) && (
             <button onClick={() => setShowRolloutForm((s) => !s)}>
               {showRolloutForm ? 'Cancel' : rolloutDates.length === 0 ? 'Set Rollout Date' : 'Revise Rollout Date'}
@@ -355,6 +358,8 @@ export default function ProjectDetail() {
           </div>
         )}
       </div>
+      </>
+      )}
 
       <div className="section">
         <div className="row-between">
