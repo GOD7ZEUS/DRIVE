@@ -7,6 +7,7 @@ export default function Companies() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isMaster = !!user.is_master;
+  const isProAdmin = user.role === 'pro_admin';
   const [companies, setCompanies] = useState(null);
   const [error, setError] = useState('');
   const [expandedId, setExpandedId] = useState(null);
@@ -145,21 +146,25 @@ export default function Companies() {
     <div>
       <div className="row-between">
         <h1>Companies</h1>
-        <button
-          className="primary"
-          onClick={() => {
-            setShowCompanyForm((s) => !s);
-            setCompanyError('');
-          }}
-        >
-          {showCompanyForm ? 'Cancel' : 'New Company'}
-        </button>
+        {!isProAdmin && (
+          <button
+            className="primary"
+            onClick={() => {
+              setShowCompanyForm((s) => !s);
+              setCompanyError('');
+            }}
+          >
+            {showCompanyForm ? 'Cancel' : 'New Company'}
+          </button>
+        )}
       </div>
       <p className="muted" style={{ marginBottom: 16 }}>
-        Add companies and departments here first — Projects and Users then just pick from what already exists.
+        {isProAdmin
+          ? 'Your company and its departments — add departments here as needed.'
+          : 'Add companies and departments here first — Projects and Users then just pick from what already exists.'}
       </p>
 
-      {showCompanyForm && (
+      {!isProAdmin && showCompanyForm && (
         <form className="panel inline-form" onSubmit={handleAddCompany} style={{ marginBottom: 20 }}>
           <input
             placeholder="Company name"

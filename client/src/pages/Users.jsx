@@ -4,12 +4,13 @@ import { useAuth } from '../auth.jsx';
 import CompanyDepartmentFields from '../components/CompanyDepartmentFields.jsx';
 import { formatUserName } from '../userDisplay.js';
 
-const ROLE_LABELS = { super_admin: 'Super Admin', admin: 'Admin', view: 'View' };
+const ROLE_LABELS = { super_admin: 'Super Admin', pro_admin: 'Pro Admin', admin: 'Admin', view: 'View' };
 
 export default function Users() {
   const { user: currentUser } = useAuth();
   const isMaster = !!currentUser.is_master;
-  const roles = isMaster ? ['admin', 'view', 'super_admin'] : ['admin', 'view'];
+  const roles = isMaster ? ['admin', 'view', 'super_admin', 'pro_admin'] : ['admin', 'view'];
+  const [proAdminCompanies, setProAdminCompanies] = useState(null);
 
   const [users, setUsers] = useState(null);
   const [error, setError] = useState('');
@@ -38,6 +39,13 @@ export default function Users() {
   }
 
   useEffect(load, []);
+
+  useEffect(() => {
+    if (!isMaster) return;
+    if (role === 'pro_admin' || editRole === 'pro_admin') {
+      api.getCompanies().then(setProAdminCompanies).catch(() => setProAdminCompanies([]));
+    }
+  }, [isMaster, role, editRole]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -161,6 +169,26 @@ export default function Users() {
           </label>
           {role === 'super_admin' ? (
             <p className="muted">Super Admin accounts aren't tied to a company/department — they see everything.</p>
+          ) : role === 'pro_admin' ? (
+            <>
+              <label>
+                Company
+                <br />
+                <select value={company} onChange={(e) => setCompany(e.target.value)} required>
+                  <option value="" disabled>
+                    {proAdminCompanies ? 'Select a company…' : 'Loading…'}
+                  </option>
+                  {proAdminCompanies?.map((c) => (
+                    <option key={c.id} value={c.name}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="muted">
+                This Pro Admin will have full control over every department, user, and project in this company.
+              </p>
+            </>
           ) : (
             <>
               <CompanyDepartmentFields
@@ -188,7 +216,7 @@ export default function Users() {
 
       <div className="list">
         {users?.map((u) => {
-          const canManage = !u.is_master && (u.role !== 'super_admin' || isMaster);
+          const canManage = !u.is_master && (isMaster || (u.role !== 'super_admin' && u.role !== 'pro_admin'));
           if (editingUserId === u.id) {
             return (
               <form
@@ -220,6 +248,21 @@ export default function Users() {
                 </label>
                 {editRole === 'super_admin' ? (
                   <p className="muted">Super Admin accounts aren't tied to a company/department.</p>
+                ) : editRole === 'pro_admin' ? (
+                  <label>
+                    Company
+                    <br />
+                    <select value={editCompany} onChange={(e) => setEditCompany(e.target.value)} required>
+                      <option value="" disabled>
+                        {proAdminCompanies ? 'Select a company…' : 'Loading…'}
+                      </option>
+                      {proAdminCompanies?.map((c) => (
+                        <option key={c.id} value={c.name}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 ) : (
                   <CompanyDepartmentFields
                     company={editCompany}
@@ -264,8 +307,13 @@ export default function Users() {
                   {u.company && (
                     <>
                       {' · '}
-                      {u.company} <span className="key-tag">Co.{u.company_id}</span> / {u.department}{' '}
-                      <span className="key-tag">Dept.{u.department_id}</span>
+                      {u.company} <span className="key-tag">Co.{u.company_id}</span>
+                      {u.department && (
+                        <>
+                          {' / '}
+                          {u.department} <span className="key-tag">Dept.{u.department_id}</span>
+                        </>
+                      )}
                     </>
                   )}
                 </div>

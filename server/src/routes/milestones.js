@@ -3,8 +3,8 @@ import { get, run } from '../db.js';
 import { requireRole, matchesScope, blockedByPrivacy } from '../middleware/auth.js';
 
 const router = Router();
-const canEdit = requireRole('super_admin', 'admin');
-const superAdminOnly = requireRole('super_admin');
+const canEdit = requireRole('super_admin', 'pro_admin', 'admin');
+const superAdminOnly = requireRole('super_admin', 'pro_admin');
 const MILESTONE_STATUSES = ['pending', 'done'];
 
 async function loadScopedMilestone(req) {
@@ -27,7 +27,7 @@ router.patch('/:id', canEdit, async (req, res, next) => {
     // Marking a milestone done/reopening it is everyday progress tracking,
     // open to Admins. Changing its title/due date is a structural edit,
     // reserved for Super Admin.
-    if ((title !== undefined || due_date !== undefined) && req.user.role !== 'super_admin') {
+    if ((title !== undefined || due_date !== undefined) && !['super_admin', 'pro_admin'].includes(req.user.role)) {
       return res.status(403).json({ error: 'only Super Admin can edit milestone details' });
     }
 

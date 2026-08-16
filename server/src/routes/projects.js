@@ -5,8 +5,8 @@ import { requireRole, matchesScope, scopeClause, blockedByPrivacy } from '../mid
 import { sendTaskAssignedEmail } from '../notifications.js';
 
 const router = Router();
-const canEdit = requireRole('super_admin', 'admin');
-const superAdminOnly = requireRole('super_admin');
+const canEdit = requireRole('super_admin', 'pro_admin', 'admin');
+const superAdminOnly = requireRole('super_admin', 'pro_admin');
 
 const PROJECT_STATUSES = ['planning', 'active', 'on_hold', 'completed'];
 
@@ -40,6 +40,25 @@ const CURRENT_ROLLOUT_DATE_SUBQUERY = `(
 // Super Admin. Admin/View accounts are unaffected — matchesScope already
 // locks them to their own company regardless.
 const PRIVATE_COMPANY_EXCLUSION = 'company_id NOT IN (SELECT id FROM companies WHERE is_private = 1)';
+
+// A company with an assigned Pro Admin has its admin/view accounts made
+// exclusive to that Pro Admin + master (see users.js) — the assignee/
+// responsible-person pickers below must honor the same exclusion, or a
+// regular Super Admin could still see and assign tasks to a "hidden" user.
+const PRO_ADMIN_EXCLUSIVITY = `(
+  role = 'pro_admin'
+  OR company_id IS NULL
+  OR company_id NOT IN (SELECT company_id FROM users WHERE role = 'pro_admin' AND company_id IS NOT NULL)
+)`;
+
+// Pro Admin keeps the standing "every user in Drive, any company" policy for
+// assignee pickers (same as a regular Super Admin) — only the exclusivity
+// rule above is narrower, and it never applies to a Pro Admin's own view.
+function assignableUsersFilter(req) {
+  if (req.user.is_master) return '';
+  if (req.user.role === 'pro_admin') return `AND (company_id IS NULL OR ${PRIVATE_COMPANY_EXCLUSION})`;
+  return `AND (company_id IS NULL OR ${PRIVATE_COMPANY_EXCLUSION}) AND ${PRO_ADMIN_EXCLUSIVITY}`;
+}
 
 router.get('/', async (req, res, next) => {
   try {
@@ -91,6 +110,15 @@ router.post('/', canEdit, async (req, res, next) => {
         return res.status(400).json({ error: 'company and department are required' });
       }
       departmentRow = await getOrCreateDepartment(companyRow.id, department);
+    } else if (req.user.role === 'pro_admin') {
+      // A Pro Admin's company is fixed, but they oversee every department in
+      // it, so — unlike Admin/View — they still pick which one it goes under.
+      const { department } = req.body;
+      if (!department || !department.trim()) {
+        return res.status(400).json({ error: 'department is required' });
+      }
+      companyRow = { id: req.user.company_id, name: req.user.company };
+      departmentRow = await getOrCreateDepartment(companyRow.id, department);
     } else {
       companyRow = { id: req.user.company_id, name: req.user.company };
       departmentRow = { id: req.user.department_id, name: req.user.department };
@@ -133,7 +161,7 @@ router.get('/assignable-users', async (req, res, next) => {
     const users = await all(
       `SELECT id, email, first_name, last_name, role FROM users
        WHERE is_master = 0
-       ${req.user.is_master ? '' : `AND (company_id IS NULL OR ${PRIVATE_COMPANY_EXCLUSION})`}
+       ${assignableUsersFilter(req)}
        ORDER BY email ASC`
     );
     res.json(users);
@@ -283,7 +311,7 @@ router.get('/:id/assignable-users', async (req, res, next) => {
     const users = await all(
       `SELECT id, email, first_name, last_name, role FROM users
        WHERE is_master = 0
-       ${req.user.is_master ? '' : `AND (company_id IS NULL OR ${PRIVATE_COMPANY_EXCLUSION})`}
+       ${assignableUsersFilter(req)}
        ORDER BY email ASC`
     );
     res.json(users);
@@ -489,7 +517,7 @@ router.post('/:id/rollout-dates', canEdit, async (req, res, next) => {
       'SELECT id FROM project_rollout_dates WHERE project_id = ? ORDER BY id DESC LIMIT 1',
       req.params.id
     );
-    if (latest && req.user.role !== 'super_admin') {
+    if (latest && !['super_admin', 'pro_admin'].includes(req.user.role)) {
       return res.status(403).json({ error: 'only Super Admin can revise an already-set rollout date' });
     }
 

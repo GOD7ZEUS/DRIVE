@@ -40,8 +40,8 @@ app.use(express.json());
 app.use(cookieParser());
 
 app.use('/api/auth', authRouter);
-app.use('/api/users', requireAuth, requireRole('super_admin'), usersRouter);
-app.use('/api/companies', requireAuth, requireRole('super_admin'), companiesRouter);
+app.use('/api/users', requireAuth, requireRole('super_admin', 'pro_admin'), usersRouter);
+app.use('/api/companies', requireAuth, requireRole('super_admin', 'pro_admin'), companiesRouter);
 
 app.use('/api/projects', requireAuth, projectsRouter);
 app.use('/api/milestones', requireAuth, milestonesRouter);

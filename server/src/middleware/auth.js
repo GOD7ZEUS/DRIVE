@@ -62,16 +62,20 @@ export function requireRole(...roles) {
   };
 }
 
-// Super admin sees everything; everyone else is scoped to their own company+department
-// (compared by primary key, not by name, so casing/typos can't split or merge scopes).
+// Super admin sees everything; a Pro Admin is scoped to every department
+// within their one assigned company (departmentId left null, meaning "any");
+// everyone else is scoped to their own company+department (compared by
+// primary key, not by name, so casing/typos can't split or merge scopes).
 export function scopeClause(req) {
   if (req.user.role === 'super_admin') return null;
+  if (req.user.role === 'pro_admin') return { companyId: req.user.company_id, departmentId: null };
   return { companyId: req.user.company_id, departmentId: req.user.department_id };
 }
 
 export function matchesScope(req, record) {
   const scope = scopeClause(req);
   if (!scope) return true;
+  if (scope.departmentId === null) return record.company_id === scope.companyId;
   return record.company_id === scope.companyId && record.department_id === scope.departmentId;
 }
 

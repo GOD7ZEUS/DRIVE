@@ -12,6 +12,8 @@ const STATUSES = ['planning', 'active', 'on_hold', 'completed'];
 export default function Projects() {
   const { user } = useAuth();
   const isSuperAdmin = user.role === 'super_admin';
+  const isProAdmin = user.role === 'pro_admin';
+  const canPickCompany = isSuperAdmin || isProAdmin;
   const canEdit = user.role !== 'view';
   const [searchParams, setSearchParams] = useSearchParams();
   const [projects, setProjects] = useState(null);
@@ -24,6 +26,7 @@ export default function Projects() {
   const [company, setCompany] = useState('');
   const [department, setDepartment] = useState('');
   const [assignableUsers, setAssignableUsers] = useState([]);
+  const [ownDepartments, setOwnDepartments] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [companyFilter, setCompanyFilter] = useState(searchParams.get('companyId') || 'all');
   const [departmentFilter, setDepartmentFilter] = useState(searchParams.get('departmentId') || 'all');
@@ -37,7 +40,10 @@ export default function Projects() {
   useEffect(() => {
     if (!showForm) return;
     api.getAllAssignableUsers().then(setAssignableUsers).catch(() => setAssignableUsers([]));
-  }, [showForm]);
+    if (isProAdmin) {
+      api.getCompanyDepartments(user.company_id).then(setOwnDepartments).catch(() => setOwnDepartments([]));
+    }
+  }, [showForm, isProAdmin, user.company_id]);
 
   const companies = useMemo(() => {
     if (!projects) return [];
@@ -50,13 +56,13 @@ export default function Projects() {
 
   const visibleProjects = useMemo(() => {
     if (!projects) return [];
-    if (!isSuperAdmin) return projects;
+    if (!canPickCompany) return projects;
     return projects.filter((p) => {
       if (companyFilter !== 'all' && String(p.company_id) !== companyFilter) return false;
       if (departmentFilter !== 'all' && String(p.department_id) !== departmentFilter) return false;
       return true;
     });
-  }, [projects, companyFilter, departmentFilter, isSuperAdmin]);
+  }, [projects, companyFilter, departmentFilter, canPickCompany]);
 
   function handleCompanyFilterChange(value) {
     setCompanyFilter(value);
@@ -82,7 +88,7 @@ export default function Projects() {
         status,
         responsible_user_id: responsibleUserId || null,
       };
-      if (isSuperAdmin) {
+      if (canPickCompany) {
         payload.company = company;
         payload.department = department;
       }
@@ -111,7 +117,7 @@ export default function Projects() {
       <div className="row-between">
         <h1>Projects</h1>
         <div className="row">
-          {isSuperAdmin && projects && projects.length > 0 && (
+          {canPickCompany && projects && projects.length > 0 && (
             <select value={companyFilter} onChange={(e) => handleCompanyFilterChange(e.target.value)}>
               <option value="all">All companies</option>
               {companies.map(([id, name]) => (
@@ -129,7 +135,7 @@ export default function Projects() {
         </div>
       </div>
 
-      {isSuperAdmin && departmentFilter !== 'all' && filteredDepartmentName && (
+      {canPickCompany && departmentFilter !== 'all' && filteredDepartmentName && (
         <p className="muted" style={{ marginBottom: 12 }}>
           Filtered to department <strong>{filteredDepartmentName}</strong> ·{' '}
           <a href="#" onClick={(e) => { e.preventDefault(); clearFilter(); }}>
@@ -180,6 +186,21 @@ export default function Projects() {
               onCompanyChange={setCompany}
               onDepartmentChange={setDepartment}
             />
+          ) : isProAdmin ? (
+            <label>
+              Department
+              <br />
+              <select value={department} onChange={(e) => setDepartment(e.target.value)} required>
+                <option value="" disabled>
+                  {ownDepartments ? 'Select a department…' : 'Loading…'}
+                </option>
+                {ownDepartments?.map((d) => (
+                  <option key={d.id} value={d.name}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </label>
           ) : (
             <p className="muted">
               Will be created under <strong>{user.company}</strong> / <strong>{user.department}</strong>
@@ -206,7 +227,7 @@ export default function Projects() {
           <Link key={p.id} to={`/projects/${p.id}`} className="list-item">
             <div>
               <div className="title">{p.name}</div>
-              {isSuperAdmin && (
+              {canPickCompany && (
                 <div className="muted">
                   {p.company} <span className="key-tag">Co.{p.company_id}</span> / {p.department}{' '}
                   <span className="key-tag">Dept.{p.department_id}</span>

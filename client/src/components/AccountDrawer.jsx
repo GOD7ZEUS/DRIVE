@@ -1,5 +1,6 @@
 export default function AccountDrawer({ user, theme, toggleTheme, onClose, onOpenChangePassword, onLogout }) {
-  const roleLabel = user.role === 'super_admin' ? 'Super Admin' : user.role === 'admin' ? 'Admin' : 'View';
+  const ROLE_LABELS = { super_admin: 'Super Admin', pro_admin: 'Pro Admin', admin: 'Admin', view: 'View' };
+  const roleLabel = ROLE_LABELS[user.role] || user.role;
 
   return (
     <div className="drawer-overlay" onClick={onClose}>

@@ -20,7 +20,7 @@ export default function ProjectDetail() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const canEdit = user.role !== 'view';
-  const isSuperAdmin = user.role === 'super_admin';
+  const isSuperAdmin = user.role === 'super_admin' || user.role === 'pro_admin';
   const [project, setProject] = useState(null);
   const [milestones, setMilestones] = useState([]);
   const [tasks, setTasks] = useState([]);

@@ -160,6 +160,38 @@ await ensureColumn('projects', 'responsible_user_id', 'INTEGER REFERENCES users(
 await ensureColumn('milestones', 'original_due_date', 'TEXT');
 await ensureColumn('companies', 'is_private', 'INTEGER NOT NULL DEFAULT 0');
 
+// SQLite has no ALTER TABLE for CHECK constraints, so adding the pro_admin
+// role means rebuilding the users table: copy every existing column
+// definition, widen just the role CHECK, copy the data across, then swap.
+// Idempotent — skipped once the live table's own DDL already allows it.
+async function ensureProAdminRole() {
+  const tableSql = await get("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'");
+  if (tableSql?.sql?.includes('pro_admin')) return;
+
+  const columns = await all('PRAGMA table_info(users)');
+  const colDefs = columns.map((c) => {
+    let def = `${c.name} ${c.type}`;
+    if (c.name === 'role') {
+      def += ` NOT NULL CHECK (role IN ('super_admin', 'admin', 'view', 'pro_admin'))`;
+      return def;
+    }
+    if (c.notnull) def += ' NOT NULL';
+    if (c.dflt_value !== null && c.dflt_value !== undefined) def += ` DEFAULT (${c.dflt_value})`;
+    if (c.pk) def += ' PRIMARY KEY AUTOINCREMENT';
+    return def;
+  });
+  const colNames = columns.map((c) => c.name).join(', ');
+
+  await db.execute('PRAGMA foreign_keys = OFF');
+  await db.execute(`CREATE TABLE users_new (${colDefs.join(', ')})`);
+  await db.execute(`INSERT INTO users_new (${colNames}) SELECT ${colNames} FROM users`);
+  await db.execute('DROP TABLE users');
+  await db.execute('ALTER TABLE users_new RENAME TO users');
+  await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users(email)');
+  await db.execute('PRAGMA foreign_keys = ON');
+}
+await ensureProAdminRole();
+
 // Users created before first/last name existed have neither — fall back to
 // their email so every list/dropdown always has something to show.
 export function displayName(user) {

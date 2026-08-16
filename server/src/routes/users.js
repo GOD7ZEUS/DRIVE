@@ -5,28 +5,64 @@ import { get, all, run, getOrCreateCompany, getOrCreateDepartment } from '../db.
 const router = Router();
 const ASSIGNABLE_ROLES = ['admin', 'view'];
 
-// Only the master account may create, edit, or delete other super_admin
-// accounts — a regular super_admin (including the account itself) cannot.
+// Only the master account may create, edit, or delete other super_admin or
+// pro_admin accounts. A Pro Admin — like a regular super_admin — can only
+// ever hand out admin/view accounts, and only within their own company.
 function allowedRoles(req) {
-  return req.user.is_master ? [...ASSIGNABLE_ROLES, 'super_admin'] : ASSIGNABLE_ROLES;
+  return req.user.is_master ? [...ASSIGNABLE_ROLES, 'super_admin', 'pro_admin'] : ASSIGNABLE_ROLES;
 }
+
+// A company with an assigned Pro Admin has its admin/view accounts made
+// exclusive to that Pro Admin + master — even when the company itself isn't
+// marked private. The Pro Admin's own account is unaffected by this (it
+// still follows the plain is_private rule below), so this only excludes
+// OTHER roles belonging to a pro-admin-managed company.
+const PRO_ADMIN_EXCLUSIVITY = `(
+  role = 'pro_admin'
+  OR company_id IS NULL
+  OR company_id NOT IN (SELECT company_id FROM users WHERE role = 'pro_admin' AND company_id IS NOT NULL)
+)`;
+
+// Same rule as PRO_ADMIN_EXCLUSIVITY above, but for a single already-loaded
+// user row — used by PATCH/DELETE so direct-by-ID access is blocked exactly
+// like the list view, not just hidden from it.
+async function hiddenByProAdminExclusivity(req, user) {
+  if (req.user.is_master || user.role === 'pro_admin' || !user.company_id) return false;
+  if (req.user.role === 'pro_admin' && req.user.company_id === user.company_id) return false;
+  const managingProAdmin = await get(
+    "SELECT id FROM users WHERE role = 'pro_admin' AND company_id = ?",
+    user.company_id
+  );
+  return !!managingProAdmin;
+}
+
+const USER_COLUMNS =
+  'id, email, first_name, last_name, role, company, department, company_id, department_id, is_master, created_at';
 
 router.get('/', async (req, res, next) => {
   try {
     // The master account is invisible to regular super admins — only master
     // sees master. Users belonging to a company master has marked private
-    // are likewise invisible to every other super admin.
-    const users = req.user.is_master
-      ? await all(
-          'SELECT id, email, first_name, last_name, role, company, department, company_id, department_id, is_master, created_at FROM users ORDER BY created_at ASC'
-        )
-      : await all(
-          `SELECT id, email, first_name, last_name, role, company, department, company_id, department_id, is_master, created_at
-           FROM users
-           WHERE is_master = 0
-             AND (company_id IS NULL OR company_id NOT IN (SELECT id FROM companies WHERE is_private = 1))
-           ORDER BY created_at ASC`
-        );
+    // are likewise invisible to every other super admin. A Pro Admin only
+    // ever sees their own company's accounts; everyone else additionally
+    // loses visibility into any company a Pro Admin has been assigned to.
+    let users;
+    if (req.user.is_master) {
+      users = await all(`SELECT ${USER_COLUMNS} FROM users ORDER BY created_at ASC`);
+    } else if (req.user.role === 'pro_admin') {
+      users = await all(
+        `SELECT ${USER_COLUMNS} FROM users WHERE company_id = ? ORDER BY created_at ASC`,
+        req.user.company_id
+      );
+    } else {
+      users = await all(
+        `SELECT ${USER_COLUMNS} FROM users
+         WHERE is_master = 0
+           AND (company_id IS NULL OR company_id NOT IN (SELECT id FROM companies WHERE is_private = 1))
+           AND ${PRO_ADMIN_EXCLUSIVITY}
+         ORDER BY created_at ASC`
+      );
+    }
     res.json(users);
   } catch (err) {
     next(err);
@@ -54,21 +90,37 @@ router.post('/', async (req, res, next) => {
       return res.status(409).json({ error: 'a user with that email already exists' });
     }
 
-    // Super admins aren't scoped to a company/department (they see everything),
-    // so unlike admin/view accounts, company+department aren't required here.
+    // Super admins aren't scoped to a company/department (they see everything).
+    // A Pro Admin is scoped to one whole company (every department in it), so
+    // gets a company but no department. Admin/View need both — and if the
+    // creator is itself a Pro Admin, the company is forced to their own
+    // (ignoring whatever the request claims) rather than trusted from the body.
     let companyRow = { id: null, name: null };
     let departmentRow = { id: null, name: null };
-    if (role !== 'super_admin') {
-      if (!company || !company.trim() || !department || !department.trim()) {
-        return res.status(400).json({ error: 'company and department are required' });
+    if (role === 'pro_admin') {
+      if (!company || !company.trim()) {
+        return res.status(400).json({ error: 'company is required for a Pro Admin' });
       }
       companyRow = await getOrCreateCompany(company);
-      // A non-master super admin can't see private companies in the picker,
-      // but could still type an exact name match — block that explicitly.
-      if (companyRow.is_private && !req.user.is_master) {
-        return res.status(400).json({ error: 'company and department are required' });
+    } else if (role !== 'super_admin') {
+      if (req.user.role === 'pro_admin') {
+        if (!department || !department.trim()) {
+          return res.status(400).json({ error: 'department is required' });
+        }
+        companyRow = { id: req.user.company_id, name: req.user.company };
+        departmentRow = await getOrCreateDepartment(companyRow.id, department);
+      } else {
+        if (!company || !company.trim() || !department || !department.trim()) {
+          return res.status(400).json({ error: 'company and department are required' });
+        }
+        companyRow = await getOrCreateCompany(company);
+        // A non-master super admin can't see private companies in the picker,
+        // but could still type an exact name match — block that explicitly.
+        if (companyRow.is_private && !req.user.is_master) {
+          return res.status(400).json({ error: 'company and department are required' });
+        }
+        departmentRow = await getOrCreateDepartment(companyRow.id, department);
       }
-      departmentRow = await getOrCreateDepartment(companyRow.id, department);
     }
 
     const passwordHash = bcrypt.hashSync(password, 10);
@@ -112,8 +164,19 @@ router.patch('/:id', async (req, res, next) => {
       const company = await get('SELECT is_private FROM companies WHERE id = ?', user.company_id);
       if (company?.is_private) return res.status(404).json({ error: 'user not found' });
     }
+    // A Pro Admin only ever manages accounts inside their own company — an
+    // admin/view user (or their own account) elsewhere doesn't exist to them.
+    if (req.user.role === 'pro_admin' && user.company_id !== req.user.company_id) {
+      return res.status(404).json({ error: 'user not found' });
+    }
+    if (await hiddenByProAdminExclusivity(req, user)) {
+      return res.status(404).json({ error: 'user not found' });
+    }
     if (user.role === 'super_admin' && !req.user.is_master) {
       return res.status(403).json({ error: 'only the master account can modify a super admin account' });
+    }
+    if (user.role === 'pro_admin' && !req.user.is_master) {
+      return res.status(403).json({ error: 'only the master account can modify a Pro Admin account' });
     }
     if (user.is_master) {
       return res.status(403).json({ error: 'the master account cannot be modified from here' });
@@ -144,6 +207,28 @@ router.patch('/:id', async (req, res, next) => {
     if (effectiveRole === 'super_admin') {
       companyRow = { id: null, name: null };
       departmentRow = { id: null, name: null };
+    } else if (effectiveRole === 'pro_admin') {
+      // Only master can reach this (a Pro Admin can't promote anyone to
+      // pro_admin — allowedRoles already blocks that), so it's master
+      // reassigning which company an existing Pro Admin oversees.
+      if (company !== undefined) {
+        if (!company.trim()) {
+          return res.status(400).json({ error: 'company is required for a Pro Admin' });
+        }
+        companyRow = await getOrCreateCompany(company);
+      }
+      departmentRow = { id: null, name: null };
+    } else if (req.user.role === 'pro_admin') {
+      // A Pro Admin can only move an account between departments within
+      // their own company — the company itself is never up for grabs here.
+      companyRow = { id: req.user.company_id, name: req.user.company };
+      if (department !== undefined || role !== undefined) {
+        const departmentName = department !== undefined ? department : user.department;
+        if (!departmentName || !departmentName.trim()) {
+          return res.status(400).json({ error: 'department is required' });
+        }
+        departmentRow = await getOrCreateDepartment(companyRow.id, departmentName);
+      }
     } else if (company !== undefined || department !== undefined || role !== undefined) {
       const companyName = company !== undefined ? company : user.company;
       const departmentName = department !== undefined ? department : user.department;
@@ -195,11 +280,20 @@ router.delete('/:id', async (req, res, next) => {
       const company = await get('SELECT is_private FROM companies WHERE id = ?', user.company_id);
       if (company?.is_private) return res.status(404).json({ error: 'user not found' });
     }
+    if (req.user.role === 'pro_admin' && user.company_id !== req.user.company_id) {
+      return res.status(404).json({ error: 'user not found' });
+    }
+    if (await hiddenByProAdminExclusivity(req, user)) {
+      return res.status(404).json({ error: 'user not found' });
+    }
     if (user.is_master) {
       return res.status(403).json({ error: 'the master account cannot be deleted from here' });
     }
     if (user.role === 'super_admin' && !req.user.is_master) {
       return res.status(403).json({ error: 'only the master account can delete a super admin account' });
+    }
+    if (user.role === 'pro_admin' && !req.user.is_master) {
+      return res.status(403).json({ error: 'only the master account can delete a Pro Admin account' });
     }
     await run('DELETE FROM users WHERE id = ?', req.params.id);
     res.status(204).end();

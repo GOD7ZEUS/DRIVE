@@ -26,6 +26,7 @@ export default function App() {
   if (!user) return <Login />;
 
   const needsSecurityQuestion = !user.has_security_question;
+  const canManageOrg = user.role === 'super_admin' || user.role === 'pro_admin';
 
   return (
     <div className="app">
@@ -43,7 +44,7 @@ export default function App() {
         <NavLink to="/" end className={({ isActive }) => (isActive ? 'active' : '')}>
           Dashboard
         </NavLink>
-        {user.role === 'super_admin' && (
+        {canManageOrg && (
           <NavLink to="/companies" className={({ isActive }) => (isActive ? 'active' : '')}>
             Companies
           </NavLink>
@@ -51,7 +52,7 @@ export default function App() {
         <NavLink to="/projects" className={({ isActive }) => (isActive ? 'active' : '')}>
           Projects
         </NavLink>
-        {user.role === 'super_admin' && (
+        {canManageOrg && (
           <NavLink to="/users" className={({ isActive }) => (isActive ? 'active' : '')}>
             Users
           </NavLink>
@@ -75,11 +76,11 @@ export default function App() {
       <main className="content" key={location.pathname}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
-          {user.role === 'super_admin' && <Route path="/companies" element={<Companies />} />}
+          {canManageOrg && <Route path="/companies" element={<Companies />} />}
           <Route path="/projects" element={<Projects />} />
           <Route path="/projects/:id" element={<ProjectDetail />} />
           <Route path="/tasks/:id" element={<TaskDetail />} />
-          {user.role === 'super_admin' && <Route path="/users" element={<Users />} />}
+          {canManageOrg && <Route path="/users" element={<Users />} />}
         </Routes>
       </main>
       <ChatWidget />

@@ -4,7 +4,7 @@ import { requireRole, matchesScope, scopeClause, blockedByPrivacy } from '../mid
 import { sendTaskAssignedEmail } from '../notifications.js';
 
 const router = Router();
-const canEdit = requireRole('super_admin', 'admin');
+const canEdit = requireRole('super_admin', 'pro_admin', 'admin');
 const TASK_STATUSES = ['todo', 'in_progress', 'done'];
 
 async function loadScopedTask(req) {
