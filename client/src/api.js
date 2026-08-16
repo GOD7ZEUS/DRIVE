@@ -48,6 +48,10 @@ export const api = {
   createComment: (taskId, data) =>
     request(`/tasks/${taskId}/comments`, { method: 'POST', body: JSON.stringify(data) }),
 
+  getRolloutDates: (projectId) => request(`/projects/${projectId}/rollout-dates`),
+  addRolloutDate: (projectId, rollout_date) =>
+    request(`/projects/${projectId}/rollout-dates`, { method: 'POST', body: JSON.stringify({ rollout_date }) }),
+
   getPlans: (projectId) => request(`/projects/${projectId}/plans`),
   uploadPlan: async (projectId, file) => {
     const formData = new FormData();

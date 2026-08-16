@@ -115,6 +115,14 @@ await db.executeMultiple(`
     uploaded_by TEXT DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS project_rollout_dates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    rollout_date TEXT NOT NULL,
+    set_by TEXT DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
 
 async function ensureColumn(table, column, definition) {
@@ -149,6 +157,7 @@ await ensureColumn('projects', 'original_deadline', 'TEXT');
 await ensureColumn('users', 'first_name', 'TEXT');
 await ensureColumn('users', 'last_name', 'TEXT');
 await ensureColumn('projects', 'responsible_user_id', 'INTEGER REFERENCES users(id)');
+await ensureColumn('milestones', 'original_due_date', 'TEXT');
 
 // Users created before first/last name existed have neither — fall back to
 // their email so every list/dropdown always has something to show.

@@ -231,9 +231,10 @@ router.post('/:id/milestones', canEdit, async (req, res, next) => {
       return res.status(400).json({ error: 'title is required' });
     }
     const result = await run(
-      'INSERT INTO milestones (project_id, title, due_date, sort_order) VALUES (?, ?, ?, ?)',
+      'INSERT INTO milestones (project_id, title, due_date, original_due_date, sort_order) VALUES (?, ?, ?, ?, ?)',
       req.params.id,
       title.trim(),
+      due_date,
       due_date,
       sort_order
     );
@@ -404,6 +405,56 @@ router.delete('/:id/plans/:planId', superAdminOnly, async (req, res, next) => {
     if (!plan) return res.status(404).json({ error: 'plan not found' });
     await run('DELETE FROM project_plans WHERE id = ?', req.params.planId);
     res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Project rollout date: every entry ever set is kept (nothing is ever
+// deleted or overwritten), newest first — a full audit trail of when the
+// rollout was originally planned and every time it got pushed. Setting the
+// very first one is Admin+Super Admin, same as everything else on a
+// project; adding a revision once one already exists is Super Admin only.
+router.get('/:id/rollout-dates', async (req, res, next) => {
+  try {
+    const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
+    if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
+    const rolloutDates = await all(
+      'SELECT * FROM project_rollout_dates WHERE project_id = ? ORDER BY id DESC',
+      req.params.id
+    );
+    res.json(rolloutDates);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/:id/rollout-dates', canEdit, async (req, res, next) => {
+  try {
+    const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
+    if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
+
+    const { rollout_date } = req.body;
+    if (!rollout_date) {
+      return res.status(400).json({ error: 'rollout_date is required' });
+    }
+
+    const latest = await get(
+      'SELECT id FROM project_rollout_dates WHERE project_id = ? ORDER BY id DESC LIMIT 1',
+      req.params.id
+    );
+    if (latest && req.user.role !== 'super_admin') {
+      return res.status(403).json({ error: 'only Super Admin can revise an already-set rollout date' });
+    }
+
+    const result = await run(
+      'INSERT INTO project_rollout_dates (project_id, rollout_date, set_by) VALUES (?, ?, ?)',
+      req.params.id,
+      rollout_date,
+      displayName(req.user)
+    );
+    const row = await get('SELECT * FROM project_rollout_dates WHERE id = ?', result.lastInsertRowid);
+    res.status(201).json(row);
   } catch (err) {
     next(err);
   }

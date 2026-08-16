@@ -25,12 +25,18 @@ export default function ProjectDetail() {
   const [tasks, setTasks] = useState([]);
   const [assignableUsers, setAssignableUsers] = useState([]);
   const [plans, setPlans] = useState([]);
+  const [rolloutDates, setRolloutDates] = useState([]);
   const [error, setError] = useState('');
   const [taskFilter, setTaskFilter] = useState('all');
 
   const planFileInputRef = useRef(null);
   const [uploadingPlan, setUploadingPlan] = useState(false);
   const [planError, setPlanError] = useState('');
+
+  const [showRolloutForm, setShowRolloutForm] = useState(false);
+  const [newRolloutDate, setNewRolloutDate] = useState('');
+  const [rolloutError, setRolloutError] = useState('');
+  const [savingRollout, setSavingRollout] = useState(false);
 
   const [responsibleUserId, setResponsibleUserId] = useState('');
   const [deadline, setDeadline] = useState('');
@@ -56,13 +62,15 @@ export default function ProjectDetail() {
       api.getProjectTasks(id),
       api.getAssignableUsers(id),
       api.getPlans(id),
+      api.getRolloutDates(id),
     ])
-      .then(([p, m, t, u, pl]) => {
+      .then(([p, m, t, u, pl, rd]) => {
         setProject(p);
         setMilestones(m);
         setTasks(t);
         setAssignableUsers(u);
         setPlans(pl);
+        setRolloutDates(rd);
         setResponsibleUserId(p.responsible_user_id || '');
         setDeadline(p.deadline || '');
       })
@@ -172,6 +180,23 @@ export default function ProjectDetail() {
     load();
   }
 
+  async function handleAddRolloutDate(e) {
+    e.preventDefault();
+    if (!newRolloutDate) return;
+    setRolloutError('');
+    setSavingRollout(true);
+    try {
+      await api.addRolloutDate(id, newRolloutDate);
+      setNewRolloutDate('');
+      setShowRolloutForm(false);
+      load();
+    } catch (err) {
+      setRolloutError(err.message);
+    } finally {
+      setSavingRollout(false);
+    }
+  }
+
   if (error) return <p className="error">{error}</p>;
   if (!project) return <p className="muted">Loading…</p>;
 
@@ -204,6 +229,29 @@ export default function ProjectDetail() {
         </div>
       </div>
 
+      <div className="row-between" style={{ marginBottom: 16 }}>
+        <div className="muted">
+          Owner:{' '}
+          {canEdit ? (
+            <select
+              value={responsibleUserId}
+              onChange={handleResponsibleUserChange}
+              style={{ display: 'inline-block', width: 'auto' }}
+            >
+              <option value="">Unassigned</option>
+              {assignableUsers.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {formatUserName(u)}
+                </option>
+              ))}
+            </select>
+          ) : (
+            project.responsible_person || 'Unassigned'
+          )}
+        </div>
+        <div className="muted">Last updated {project.updated_at}</div>
+      </div>
+
       {showDetails && (
       <table className="detail-table">
         <tbody>
@@ -220,23 +268,6 @@ export default function ProjectDetail() {
                 </select>
               ) : (
                 <StatusBadge status={project.status} />
-              )}
-            </td>
-          </tr>
-          <tr>
-            <th>Responsible Person</th>
-            <td>
-              {canEdit ? (
-                <select value={responsibleUserId} onChange={handleResponsibleUserChange}>
-                  <option value="">Unassigned</option>
-                  {assignableUsers.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {formatUserName(u)}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                project.responsible_person || <span className="muted">Unassigned</span>
               )}
             </td>
           </tr>
@@ -313,13 +344,55 @@ export default function ProjectDetail() {
             <th>Created</th>
             <td>{project.created_at}</td>
           </tr>
-          <tr>
-            <th>Last Updated</th>
-            <td>{project.updated_at}</td>
-          </tr>
         </tbody>
       </table>
       )}
+
+      <div className="section">
+        <div className="row-between">
+          <h2>Project Rollout Date</h2>
+          {(rolloutDates.length === 0 ? canEdit : isSuperAdmin) && (
+            <button onClick={() => setShowRolloutForm((s) => !s)}>
+              {showRolloutForm ? 'Cancel' : rolloutDates.length === 0 ? 'Set Rollout Date' : 'Revise Rollout Date'}
+            </button>
+          )}
+        </div>
+
+        {showRolloutForm && (
+          <form className="inline-form panel" onSubmit={handleAddRolloutDate} style={{ marginBottom: 12 }}>
+            <input
+              type="date"
+              value={newRolloutDate}
+              onChange={(e) => setNewRolloutDate(e.target.value)}
+              required
+              autoFocus
+            />
+            <button type="submit" className="primary" disabled={savingRollout}>
+              Save
+            </button>
+          </form>
+        )}
+        {rolloutError && <p className="error">{rolloutError}</p>}
+
+        {rolloutDates.length === 0 ? (
+          <p className="muted">No rollout date set yet.</p>
+        ) : (
+          <div className="list">
+            {rolloutDates.map((r, i) => (
+              <div key={r.id} className="list-item">
+                <div>
+                  <div className="title">
+                    {r.rollout_date} {i === 0 && <span className="key-tag">CURRENT</span>}
+                  </div>
+                  <div className="muted">
+                    Set by {r.set_by || 'unknown'} · {r.created_at}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="section">
         <div className="row-between">
@@ -439,7 +512,13 @@ export default function ProjectDetail() {
                     <div className="list-item">
                       <div>
                         <div className="title">{m.title}</div>
-                        {m.due_date && <div className="muted">Due {m.due_date}</div>}
+                        {m.due_date && (
+                          <div className="muted">
+                            {m.original_due_date && m.original_due_date !== m.due_date
+                              ? `Originally due ${m.original_due_date} · revised to ${m.due_date}`
+                              : `Due ${m.due_date}`}
+                          </div>
+                        )}
                       </div>
                       <div className="row">
                         <StatusBadge status={m.status} />

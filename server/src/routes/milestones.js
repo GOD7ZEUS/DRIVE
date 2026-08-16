@@ -31,10 +31,19 @@ router.patch('/:id', canEdit, async (req, res, next) => {
       return res.status(403).json({ error: 'only Super Admin can edit milestone details' });
     }
 
+    // The first due date a milestone is ever given is kept on record forever,
+    // so a later delay/revision still shows what was originally planned
+    // instead of silently overwriting it.
+    let originalDueDate = milestone.original_due_date;
+    if (due_date !== undefined && due_date !== null && !originalDueDate) {
+      originalDueDate = due_date;
+    }
+
     await run(
-      `UPDATE milestones SET title = ?, due_date = ?, status = ?, sort_order = ? WHERE id = ?`,
+      `UPDATE milestones SET title = ?, due_date = ?, original_due_date = ?, status = ?, sort_order = ? WHERE id = ?`,
       title !== undefined ? title : milestone.title,
       due_date !== undefined ? due_date : milestone.due_date,
+      originalDueDate,
       status !== undefined ? status : milestone.status,
       sort_order !== undefined ? sort_order : milestone.sort_order,
       req.params.id
