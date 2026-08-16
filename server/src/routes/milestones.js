@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { get, run } from '../db.js';
-import { requireRole, matchesScope } from '../middleware/auth.js';
+import { requireRole, matchesScope, blockedByPrivacy } from '../middleware/auth.js';
 
 const router = Router();
 const canEdit = requireRole('super_admin', 'admin');
@@ -11,7 +11,7 @@ async function loadScopedMilestone(req) {
   const milestone = await get('SELECT * FROM milestones WHERE id = ?', req.params.id);
   if (!milestone) return null;
   const project = await get('SELECT * FROM projects WHERE id = ?', milestone.project_id);
-  if (!project || !matchesScope(req, project)) return null;
+  if (!project || !matchesScope(req, project) || (await blockedByPrivacy(req, project))) return null;
   return milestone;
 }
 

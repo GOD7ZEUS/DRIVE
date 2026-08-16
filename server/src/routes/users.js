@@ -13,14 +13,19 @@ function allowedRoles(req) {
 
 router.get('/', async (req, res, next) => {
   try {
-    // The master account is invisible to regular super admins — only master sees master.
+    // The master account is invisible to regular super admins — only master
+    // sees master. Users belonging to a company master has marked private
+    // are likewise invisible to every other super admin.
     const users = req.user.is_master
       ? await all(
           'SELECT id, email, first_name, last_name, role, company, department, company_id, department_id, is_master, created_at FROM users ORDER BY created_at ASC'
         )
       : await all(
           `SELECT id, email, first_name, last_name, role, company, department, company_id, department_id, is_master, created_at
-           FROM users WHERE is_master = 0 ORDER BY created_at ASC`
+           FROM users
+           WHERE is_master = 0
+             AND (company_id IS NULL OR company_id NOT IN (SELECT id FROM companies WHERE is_private = 1))
+           ORDER BY created_at ASC`
         );
     res.json(users);
   } catch (err) {
@@ -58,6 +63,11 @@ router.post('/', async (req, res, next) => {
         return res.status(400).json({ error: 'company and department are required' });
       }
       companyRow = await getOrCreateCompany(company);
+      // A non-master super admin can't see private companies in the picker,
+      // but could still type an exact name match — block that explicitly.
+      if (companyRow.is_private && !req.user.is_master) {
+        return res.status(400).json({ error: 'company and department are required' });
+      }
       departmentRow = await getOrCreateDepartment(companyRow.id, department);
     }
 
@@ -93,8 +103,14 @@ router.patch('/:id', async (req, res, next) => {
     if (!user) return res.status(404).json({ error: 'user not found' });
     // The master account is invisible to non-master requesters — a 404 here,
     // not a 403, so its existence can't be inferred from the error either.
+    // Same treatment for a user belonging to a company master has marked
+    // private — invisible to every other super admin.
     if (user.is_master && !req.user.is_master) {
       return res.status(404).json({ error: 'user not found' });
+    }
+    if (!req.user.is_master && user.company_id) {
+      const company = await get('SELECT is_private FROM companies WHERE id = ?', user.company_id);
+      if (company?.is_private) return res.status(404).json({ error: 'user not found' });
     }
     if (user.role === 'super_admin' && !req.user.is_master) {
       return res.status(403).json({ error: 'only the master account can modify a super admin account' });
@@ -135,6 +151,9 @@ router.patch('/:id', async (req, res, next) => {
         return res.status(400).json({ error: 'company and department are required' });
       }
       companyRow = await getOrCreateCompany(companyName);
+      if (companyRow.is_private && !req.user.is_master) {
+        return res.status(400).json({ error: 'company and department are required' });
+      }
       departmentRow = await getOrCreateDepartment(companyRow.id, departmentName);
     }
 
@@ -171,6 +190,10 @@ router.delete('/:id', async (req, res, next) => {
     if (!user) return res.status(404).json({ error: 'user not found' });
     if (user.is_master && !req.user.is_master) {
       return res.status(404).json({ error: 'user not found' });
+    }
+    if (!req.user.is_master && user.company_id) {
+      const company = await get('SELECT is_private FROM companies WHERE id = ?', user.company_id);
+      if (company?.is_private) return res.status(404).json({ error: 'user not found' });
     }
     if (user.is_master) {
       return res.status(403).json({ error: 'the master account cannot be deleted from here' });

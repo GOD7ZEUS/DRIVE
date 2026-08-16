@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
+import { useAuth } from '../auth.jsx';
 
 export default function Companies() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isMaster = !!user.is_master;
   const [companies, setCompanies] = useState(null);
   const [error, setError] = useState('');
   const [expandedId, setExpandedId] = useState(null);
@@ -12,6 +15,7 @@ export default function Companies() {
 
   const [showCompanyForm, setShowCompanyForm] = useState(false);
   const [companyName, setCompanyName] = useState('');
+  const [companyPrivate, setCompanyPrivate] = useState(false);
   const [companyError, setCompanyError] = useState('');
   const [submittingCompany, setSubmittingCompany] = useState(false);
 
@@ -19,6 +23,15 @@ export default function Companies() {
   const [deptName, setDeptName] = useState('');
   const [deptError, setDeptError] = useState('');
   const [submittingDept, setSubmittingDept] = useState(false);
+
+  const [editingCompanyId, setEditingCompanyId] = useState(null);
+  const [editCompanyName, setEditCompanyName] = useState('');
+  const [editCompanyPrivate, setEditCompanyPrivate] = useState(false);
+  const [editCompanyError, setEditCompanyError] = useState('');
+
+  const [editingDeptId, setEditingDeptId] = useState(null);
+  const [editDeptName, setEditDeptName] = useState('');
+  const [editDeptError, setEditDeptError] = useState('');
 
   function load() {
     api.getCompanies().then(setCompanies).catch((e) => setError(e.message));
@@ -54,8 +67,9 @@ export default function Companies() {
     setSubmittingCompany(true);
     setCompanyError('');
     try {
-      await api.createCompany(companyName);
+      await api.createCompany(companyName, companyPrivate);
       setCompanyName('');
+      setCompanyPrivate(false);
       setShowCompanyForm(false);
       load();
     } catch (e) {
@@ -81,6 +95,49 @@ export default function Companies() {
       setDeptError(e.message);
     } finally {
       setSubmittingDept(false);
+    }
+  }
+
+  function startEditCompany(e, company) {
+    e.stopPropagation();
+    setEditingCompanyId(company.id);
+    setEditCompanyName(company.name);
+    setEditCompanyPrivate(!!company.is_private);
+    setEditCompanyError('');
+  }
+
+  async function handleSaveCompanyEdit(e, companyId) {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      const payload = { name: editCompanyName };
+      if (isMaster) payload.is_private = editCompanyPrivate;
+      await api.updateCompany(companyId, payload);
+      setEditingCompanyId(null);
+      load();
+    } catch (err) {
+      setEditCompanyError(err.message);
+    }
+  }
+
+  function startEditDept(e, dept) {
+    e.stopPropagation();
+    setEditingDeptId(dept.id);
+    setEditDeptName(dept.name);
+    setEditDeptError('');
+  }
+
+  async function handleSaveDeptEdit(e, company, deptId) {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await api.updateDepartment(company.id, deptId, editDeptName);
+      setEditingDeptId(null);
+      const rows = await api.getCompanyDepartments(company.id);
+      setDepartments(rows);
+      load();
+    } catch (err) {
+      setEditDeptError(err.message);
     }
   }
 
@@ -111,6 +168,16 @@ export default function Companies() {
             required
             autoFocus
           />
+          {isMaster && (
+            <label className="row" style={{ gap: 6, alignItems: 'center' }}>
+              <input
+                type="checkbox"
+                checked={companyPrivate}
+                onChange={(e) => setCompanyPrivate(e.target.checked)}
+              />
+              Keep this private (only visible to you)
+            </label>
+          )}
           <button type="submit" className="primary" disabled={submittingCompany}>
             {submittingCompany ? 'Adding…' : 'Add'}
           </button>
@@ -125,18 +192,55 @@ export default function Companies() {
       <div className="list">
         {companies?.map((c) => (
           <div key={c.id}>
-            <div className="list-item" onClick={() => toggleCompany(c)} style={{ cursor: 'pointer' }}>
-              <div>
-                <div className="title">
-                  {c.name} <span className="key-tag">Co.{c.id}</span>
+            {editingCompanyId === c.id ? (
+              <form
+                className="panel inline-form"
+                onSubmit={(e) => handleSaveCompanyEdit(e, c.id)}
+                onClick={(e) => e.stopPropagation()}
+                style={{ marginBottom: 8 }}
+              >
+                <input
+                  value={editCompanyName}
+                  onChange={(e) => setEditCompanyName(e.target.value)}
+                  required
+                  autoFocus
+                />
+                {isMaster && (
+                  <label className="row" style={{ gap: 6, alignItems: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={editCompanyPrivate}
+                      onChange={(e) => setEditCompanyPrivate(e.target.checked)}
+                    />
+                    Private (only visible to you)
+                  </label>
+                )}
+                <button type="submit" className="primary">
+                  Save
+                </button>
+                <button type="button" onClick={() => setEditingCompanyId(null)}>
+                  Cancel
+                </button>
+                {editCompanyError && <p className="error">{editCompanyError}</p>}
+              </form>
+            ) : (
+              <div className="list-item" onClick={() => toggleCompany(c)} style={{ cursor: 'pointer' }}>
+                <div>
+                  <div className="title">
+                    {c.name} <span className="key-tag">Co.{c.id}</span>{' '}
+                    {!!c.is_private && <span className="key-tag">PRIVATE</span>}
+                  </div>
+                  <div className="muted">
+                    {c.department_count} department{c.department_count === 1 ? '' : 's'} ·{' '}
+                    {c.project_count} project{c.project_count === 1 ? '' : 's'}
+                  </div>
                 </div>
-                <div className="muted">
-                  {c.department_count} department{c.department_count === 1 ? '' : 's'} ·{' '}
-                  {c.project_count} project{c.project_count === 1 ? '' : 's'}
+                <div className="row">
+                  <button onClick={(e) => startEditCompany(e, c)}>Edit</button>
+                  <span className="muted">{expandedId === c.id ? '▲' : '▼'}</span>
                 </div>
               </div>
-              <span className="muted">{expandedId === c.id ? '▲' : '▼'}</span>
-            </div>
+            )}
 
             {expandedId === c.id && (
               <div className="panel" style={{ marginTop: 8, marginBottom: 8 }}>
@@ -178,23 +282,48 @@ export default function Companies() {
                 {!departments && !departmentsError && <p className="muted">Loading departments…</p>}
                 {departments && departments.length === 0 && <p className="muted">No departments yet.</p>}
                 <div className="list">
-                  {departments?.map((d) => (
-                    <div
-                      key={d.id}
-                      className="list-item"
-                      onClick={() => goToProjects(c, d)}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <div>
-                        <div className="title">
-                          {d.name} <span className="key-tag">Dept.{d.id}</span>
+                  {departments?.map((d) =>
+                    editingDeptId === d.id ? (
+                      <form
+                        key={d.id}
+                        className="inline-form panel"
+                        onSubmit={(e) => handleSaveDeptEdit(e, c, d.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ marginBottom: 4 }}
+                      >
+                        <input
+                          value={editDeptName}
+                          onChange={(e) => setEditDeptName(e.target.value)}
+                          required
+                          autoFocus
+                        />
+                        <button type="submit" className="primary">
+                          Save
+                        </button>
+                        <button type="button" onClick={() => setEditingDeptId(null)}>
+                          Cancel
+                        </button>
+                        {editDeptError && <p className="error">{editDeptError}</p>}
+                      </form>
+                    ) : (
+                      <div
+                        key={d.id}
+                        className="list-item"
+                        onClick={() => goToProjects(c, d)}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <div>
+                          <div className="title">
+                            {d.name} <span className="key-tag">Dept.{d.id}</span>
+                          </div>
+                          <div className="muted">
+                            {d.project_count} project{d.project_count === 1 ? '' : 's'}
+                          </div>
                         </div>
-                        <div className="muted">
-                          {d.project_count} project{d.project_count === 1 ? '' : 's'}
-                        </div>
+                        <button onClick={(e) => startEditDept(e, d)}>Edit</button>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  )}
                 </div>
               </div>
             )}

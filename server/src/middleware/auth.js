@@ -74,3 +74,15 @@ export function matchesScope(req, record) {
   if (!scope) return true;
   return record.company_id === scope.companyId && record.department_id === scope.departmentId;
 }
+
+// A company the master account marks private is invisible to every other
+// Super Admin. Admin/View are already excluded from another company's
+// records by matchesScope's scope check — this only matters for the
+// otherwise-unscoped (scopeClause returns null) case: a non-master Super
+// Admin, who would normally see any record by ID regardless of company.
+export async function blockedByPrivacy(req, record) {
+  if (req.user.is_master || scopeClause(req)) return false;
+  if (!record?.company_id) return false;
+  const company = await get('SELECT is_private FROM companies WHERE id = ?', record.company_id);
+  return !!company?.is_private;
+}

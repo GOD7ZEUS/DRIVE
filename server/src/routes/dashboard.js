@@ -7,25 +7,36 @@ const router = Router();
 // Non-super-admins are always locked to their own company/department, no
 // matter what query params they send. Super admins see everything by
 // default, but can optionally filter to one company (and, within it, one
-// department) via ?companyId=&departmentId=.
+// department) via ?companyId=&departmentId=. A non-master super admin
+// additionally never sees data from a company master has marked private —
+// same invisibility as the Companies/Projects/Users lists.
 function resolveFilter(req) {
   const scope = scopeClause(req);
   if (scope) return scope;
   const companyId = req.query.companyId ? Number(req.query.companyId) : null;
-  if (!companyId) return null;
   const departmentId = req.query.departmentId ? Number(req.query.departmentId) : null;
-  return { companyId, departmentId };
+  if (req.user.is_master) {
+    return companyId ? { companyId, departmentId } : null;
+  }
+  return { companyId, departmentId, excludePrivate: true };
 }
 
 function filterSql(filter, tablePrefix = '') {
-  if (!filter) return { where: '', and: '', params: [] };
   const prefix = tablePrefix ? `${tablePrefix}.` : '';
-  const conditions = [`${prefix}company_id = ?`];
-  const params = [filter.companyId];
-  if (filter.departmentId) {
-    conditions.push(`${prefix}department_id = ?`);
-    params.push(filter.departmentId);
+  const conditions = [];
+  const params = [];
+  if (filter?.companyId) {
+    conditions.push(`${prefix}company_id = ?`);
+    params.push(filter.companyId);
+    if (filter.departmentId) {
+      conditions.push(`${prefix}department_id = ?`);
+      params.push(filter.departmentId);
+    }
   }
+  if (filter?.excludePrivate) {
+    conditions.push(`${prefix}company_id NOT IN (SELECT id FROM companies WHERE is_private = 1)`);
+  }
+  if (conditions.length === 0) return { where: '', and: '', params: [] };
   return { where: `WHERE ${conditions.join(' AND ')}`, and: `AND ${conditions.join(' AND ')}`, params };
 }
 

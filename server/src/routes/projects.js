@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { get, all, run, getOrCreateCompany, getOrCreateDepartment, displayName } from '../db.js';
-import { requireRole, matchesScope, scopeClause } from '../middleware/auth.js';
+import { requireRole, matchesScope, scopeClause, blockedByPrivacy } from '../middleware/auth.js';
 import { sendTaskAssignedEmail } from '../notifications.js';
 
 const router = Router();
@@ -36,19 +36,30 @@ const CURRENT_ROLLOUT_DATE_SUBQUERY = `(
   WHERE project_id = projects.id ORDER BY id DESC LIMIT 1
 ) as current_rollout_date`;
 
+// A company the master account marks private is invisible to every other
+// Super Admin. Admin/View accounts are unaffected — matchesScope already
+// locks them to their own company regardless.
+const PRIVATE_COMPANY_EXCLUSION = 'company_id NOT IN (SELECT id FROM companies WHERE is_private = 1)';
+
 router.get('/', async (req, res, next) => {
   try {
     const scope = scopeClause(req);
-    const projects = scope
-      ? await all(
-          `SELECT projects.*, ${CURRENT_ROLLOUT_DATE_SUBQUERY} FROM projects
-           WHERE company_id = ? AND department_id = ? ORDER BY created_at DESC`,
-          scope.companyId,
-          scope.departmentId
-        )
-      : await all(
-          `SELECT projects.*, ${CURRENT_ROLLOUT_DATE_SUBQUERY} FROM projects ORDER BY created_at DESC`
-        );
+    let projects;
+    if (scope) {
+      projects = await all(
+        `SELECT projects.*, ${CURRENT_ROLLOUT_DATE_SUBQUERY} FROM projects
+         WHERE company_id = ? AND department_id = ? ORDER BY created_at DESC`,
+        scope.companyId,
+        scope.departmentId
+      );
+    } else if (req.user.is_master) {
+      projects = await all(`SELECT projects.*, ${CURRENT_ROLLOUT_DATE_SUBQUERY} FROM projects ORDER BY created_at DESC`);
+    } else {
+      projects = await all(
+        `SELECT projects.*, ${CURRENT_ROLLOUT_DATE_SUBQUERY} FROM projects
+         WHERE ${PRIVATE_COMPANY_EXCLUSION} ORDER BY created_at DESC`
+      );
+    }
     res.json(projects);
   } catch (err) {
     next(err);
@@ -73,6 +84,12 @@ router.post('/', canEdit, async (req, res, next) => {
         return res.status(400).json({ error: 'company and department are required' });
       }
       companyRow = await getOrCreateCompany(company);
+      // A non-master super admin can't see private companies in the picker,
+      // but could still type an exact name match — block that explicitly
+      // rather than silently attaching their new project to a hidden company.
+      if (companyRow.is_private && !req.user.is_master) {
+        return res.status(400).json({ error: 'company and department are required' });
+      }
       departmentRow = await getOrCreateDepartment(companyRow.id, department);
     } else {
       companyRow = { id: req.user.company_id, name: req.user.company };
@@ -114,7 +131,10 @@ router.post('/', canEdit, async (req, res, next) => {
 router.get('/assignable-users', async (req, res, next) => {
   try {
     const users = await all(
-      'SELECT id, email, first_name, last_name, role FROM users WHERE is_master = 0 ORDER BY email ASC'
+      `SELECT id, email, first_name, last_name, role FROM users
+       WHERE is_master = 0
+       ${req.user.is_master ? '' : `AND (company_id IS NULL OR ${PRIVATE_COMPANY_EXCLUSION})`}
+       ORDER BY email ASC`
     );
     res.json(users);
   } catch (err) {
@@ -128,7 +148,9 @@ router.get('/:id', async (req, res, next) => {
       `SELECT projects.*, ${CURRENT_ROLLOUT_DATE_SUBQUERY} FROM projects WHERE id = ?`,
       req.params.id
     );
-    if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
+    if (!project || !matchesScope(req, project) || (await blockedByPrivacy(req, project))) {
+      return res.status(404).json({ error: 'project not found' });
+    }
     res.json(project);
   } catch (err) {
     next(err);
@@ -138,7 +160,9 @@ router.get('/:id', async (req, res, next) => {
 router.patch('/:id', canEdit, async (req, res, next) => {
   try {
     const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
-    if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
+    if (!project || !matchesScope(req, project) || (await blockedByPrivacy(req, project))) {
+      return res.status(404).json({ error: 'project not found' });
+    }
 
     const { name, description, status, responsible_user_id } = req.body;
     if (status !== undefined && !PROJECT_STATUSES.includes(status)) {
@@ -194,7 +218,9 @@ router.patch('/:id', canEdit, async (req, res, next) => {
 router.delete('/:id', canEdit, async (req, res, next) => {
   try {
     const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
-    if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
+    if (!project || !matchesScope(req, project) || (await blockedByPrivacy(req, project))) {
+      return res.status(404).json({ error: 'project not found' });
+    }
     await run('DELETE FROM projects WHERE id = ?', req.params.id);
     res.status(204).end();
   } catch (err) {
@@ -205,7 +231,9 @@ router.delete('/:id', canEdit, async (req, res, next) => {
 router.get('/:id/milestones', async (req, res, next) => {
   try {
     const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
-    if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
+    if (!project || !matchesScope(req, project) || (await blockedByPrivacy(req, project))) {
+      return res.status(404).json({ error: 'project not found' });
+    }
     const milestones = await all(
       'SELECT * FROM milestones WHERE project_id = ? ORDER BY sort_order ASC, id ASC',
       req.params.id
@@ -219,7 +247,9 @@ router.get('/:id/milestones', async (req, res, next) => {
 router.post('/:id/milestones', canEdit, async (req, res, next) => {
   try {
     const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
-    if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
+    if (!project || !matchesScope(req, project) || (await blockedByPrivacy(req, project))) {
+      return res.status(404).json({ error: 'project not found' });
+    }
 
     const { title, due_date = null, sort_order = 0 } = req.body;
     if (!title || !title.trim()) {
@@ -246,10 +276,15 @@ router.post('/:id/milestones', canEdit, async (req, res, next) => {
 router.get('/:id/assignable-users', async (req, res, next) => {
   try {
     const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
-    if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
+    if (!project || !matchesScope(req, project) || (await blockedByPrivacy(req, project))) {
+      return res.status(404).json({ error: 'project not found' });
+    }
 
     const users = await all(
-      'SELECT id, email, first_name, last_name, role FROM users WHERE is_master = 0 ORDER BY email ASC'
+      `SELECT id, email, first_name, last_name, role FROM users
+       WHERE is_master = 0
+       ${req.user.is_master ? '' : `AND (company_id IS NULL OR ${PRIVATE_COMPANY_EXCLUSION})`}
+       ORDER BY email ASC`
     );
     res.json(users);
   } catch (err) {
@@ -260,7 +295,9 @@ router.get('/:id/assignable-users', async (req, res, next) => {
 router.get('/:id/tasks', async (req, res, next) => {
   try {
     const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
-    if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
+    if (!project || !matchesScope(req, project) || (await blockedByPrivacy(req, project))) {
+      return res.status(404).json({ error: 'project not found' });
+    }
     const tasks = await all('SELECT * FROM tasks WHERE project_id = ? ORDER BY created_at DESC', req.params.id);
     res.json(tasks);
   } catch (err) {
@@ -273,7 +310,9 @@ const TASK_STATUSES = ['todo', 'in_progress', 'done'];
 router.post('/:id/tasks', canEdit, async (req, res, next) => {
   try {
     const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
-    if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
+    if (!project || !matchesScope(req, project) || (await blockedByPrivacy(req, project))) {
+      return res.status(404).json({ error: 'project not found' });
+    }
 
     const {
       title,
@@ -326,7 +365,9 @@ router.post('/:id/tasks', canEdit, async (req, res, next) => {
 router.get('/:id/plans', async (req, res, next) => {
   try {
     const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
-    if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
+    if (!project || !matchesScope(req, project) || (await blockedByPrivacy(req, project))) {
+      return res.status(404).json({ error: 'project not found' });
+    }
     const plans = await all(
       `SELECT id, filename, mime_type, size_bytes, uploaded_by, created_at
        FROM project_plans WHERE project_id = ? ORDER BY id DESC`,
@@ -346,7 +387,9 @@ router.post('/:id/plans', canEdit, (req, res, next) => {
 }, async (req, res, next) => {
   try {
     const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
-    if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
+    if (!project || !matchesScope(req, project) || (await blockedByPrivacy(req, project))) {
+      return res.status(404).json({ error: 'project not found' });
+    }
     if (!req.file) return res.status(400).json({ error: 'file is required' });
 
     const result = await run(
@@ -373,7 +416,9 @@ router.post('/:id/plans', canEdit, (req, res, next) => {
 router.get('/:id/plans/:planId/download', async (req, res, next) => {
   try {
     const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
-    if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
+    if (!project || !matchesScope(req, project) || (await blockedByPrivacy(req, project))) {
+      return res.status(404).json({ error: 'project not found' });
+    }
     const plan = await get(
       'SELECT * FROM project_plans WHERE id = ? AND project_id = ?',
       req.params.planId,
@@ -391,7 +436,9 @@ router.get('/:id/plans/:planId/download', async (req, res, next) => {
 router.delete('/:id/plans/:planId', superAdminOnly, async (req, res, next) => {
   try {
     const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
-    if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
+    if (!project || !matchesScope(req, project) || (await blockedByPrivacy(req, project))) {
+      return res.status(404).json({ error: 'project not found' });
+    }
     const plan = await get(
       'SELECT id FROM project_plans WHERE id = ? AND project_id = ?',
       req.params.planId,
@@ -413,7 +460,9 @@ router.delete('/:id/plans/:planId', superAdminOnly, async (req, res, next) => {
 router.get('/:id/rollout-dates', async (req, res, next) => {
   try {
     const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
-    if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
+    if (!project || !matchesScope(req, project) || (await blockedByPrivacy(req, project))) {
+      return res.status(404).json({ error: 'project not found' });
+    }
     const rolloutDates = await all(
       'SELECT * FROM project_rollout_dates WHERE project_id = ? ORDER BY id DESC',
       req.params.id
@@ -427,7 +476,9 @@ router.get('/:id/rollout-dates', async (req, res, next) => {
 router.post('/:id/rollout-dates', canEdit, async (req, res, next) => {
   try {
     const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
-    if (!project || !matchesScope(req, project)) return res.status(404).json({ error: 'project not found' });
+    if (!project || !matchesScope(req, project) || (await blockedByPrivacy(req, project))) {
+      return res.status(404).json({ error: 'project not found' });
+    }
 
     const { rollout_date } = req.body;
     if (!rollout_date) {

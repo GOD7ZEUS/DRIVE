@@ -158,6 +158,7 @@ await ensureColumn('users', 'first_name', 'TEXT');
 await ensureColumn('users', 'last_name', 'TEXT');
 await ensureColumn('projects', 'responsible_user_id', 'INTEGER REFERENCES users(id)');
 await ensureColumn('milestones', 'original_due_date', 'TEXT');
+await ensureColumn('companies', 'is_private', 'INTEGER NOT NULL DEFAULT 0');
 
 // Users created before first/last name existed have neither — fall back to
 // their email so every list/dropdown always has something to show.

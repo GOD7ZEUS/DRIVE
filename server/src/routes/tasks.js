@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { get, all, run, displayName } from '../db.js';
-import { requireRole, matchesScope, scopeClause } from '../middleware/auth.js';
+import { requireRole, matchesScope, scopeClause, blockedByPrivacy } from '../middleware/auth.js';
 import { sendTaskAssignedEmail } from '../notifications.js';
 
 const router = Router();
@@ -11,23 +11,33 @@ async function loadScopedTask(req) {
   const task = await get('SELECT * FROM tasks WHERE id = ?', req.params.id);
   if (!task) return null;
   const project = await get('SELECT * FROM projects WHERE id = ?', task.project_id);
-  if (!project || !matchesScope(req, project)) return null;
+  if (!project || !matchesScope(req, project) || (await blockedByPrivacy(req, project))) return null;
   return task;
 }
 
 router.get('/', async (req, res, next) => {
   try {
     const scope = scopeClause(req);
-    const tasks = scope
-      ? await all(
-          `SELECT tasks.* FROM tasks
-           JOIN projects ON projects.id = tasks.project_id
-           WHERE projects.company_id = ? AND projects.department_id = ?
-           ORDER BY tasks.created_at DESC`,
-          scope.companyId,
-          scope.departmentId
-        )
-      : await all('SELECT * FROM tasks ORDER BY created_at DESC');
+    let tasks;
+    if (scope) {
+      tasks = await all(
+        `SELECT tasks.* FROM tasks
+         JOIN projects ON projects.id = tasks.project_id
+         WHERE projects.company_id = ? AND projects.department_id = ?
+         ORDER BY tasks.created_at DESC`,
+        scope.companyId,
+        scope.departmentId
+      );
+    } else if (req.user.is_master) {
+      tasks = await all('SELECT * FROM tasks ORDER BY created_at DESC');
+    } else {
+      tasks = await all(
+        `SELECT tasks.* FROM tasks
+         JOIN projects ON projects.id = tasks.project_id
+         WHERE projects.company_id NOT IN (SELECT id FROM companies WHERE is_private = 1)
+         ORDER BY tasks.created_at DESC`
+      );
+    }
     res.json(tasks);
   } catch (err) {
     next(err);
