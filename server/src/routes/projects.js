@@ -51,13 +51,19 @@ const PRO_ADMIN_EXCLUSIVITY = `(
   OR company_id NOT IN (SELECT company_id FROM users WHERE role = 'pro_admin' AND company_id IS NOT NULL)
 )`;
 
-// Pro Admin keeps the standing "every user in Drive, any company" policy for
-// assignee pickers (same as a regular Super Admin) — only the exclusivity
-// rule above is narrower, and it never applies to a Pro Admin's own view.
+// Master and a regular Super Admin keep the standing "every user in Drive,
+// any company" policy for assignee pickers — except a user belonging to a
+// pro-admin-managed company, which the exclusivity rule above still hides.
+// A Pro Admin is different: their own company is meant to stay siloed even
+// from them assigning outward, so their picker is narrowed to just their own
+// company's accounts (i.e. themselves plus whoever they've created).
 function assignableUsersFilter(req) {
-  if (req.user.is_master) return '';
-  if (req.user.role === 'pro_admin') return `AND (company_id IS NULL OR ${PRIVATE_COMPANY_EXCLUSION})`;
-  return `AND (company_id IS NULL OR ${PRIVATE_COMPANY_EXCLUSION}) AND ${PRO_ADMIN_EXCLUSIVITY}`;
+  if (req.user.is_master) return { sql: '', params: [] };
+  if (req.user.role === 'pro_admin') return { sql: 'AND company_id = ?', params: [req.user.company_id] };
+  return {
+    sql: `AND (company_id IS NULL OR ${PRIVATE_COMPANY_EXCLUSION}) AND ${PRO_ADMIN_EXCLUSIVITY}`,
+    params: [],
+  };
 }
 
 router.get('/', async (req, res, next) => {
@@ -158,11 +164,13 @@ router.post('/', canEdit, async (req, res, next) => {
 // isn't swallowed as an :id value.
 router.get('/assignable-users', async (req, res, next) => {
   try {
+    const filter = assignableUsersFilter(req);
     const users = await all(
       `SELECT id, email, first_name, last_name, role FROM users
        WHERE is_master = 0
-       ${assignableUsersFilter(req)}
-       ORDER BY email ASC`
+       ${filter.sql}
+       ORDER BY email ASC`,
+      ...filter.params
     );
     res.json(users);
   } catch (err) {
@@ -308,11 +316,13 @@ router.get('/:id/assignable-users', async (req, res, next) => {
       return res.status(404).json({ error: 'project not found' });
     }
 
+    const filter = assignableUsersFilter(req);
     const users = await all(
       `SELECT id, email, first_name, last_name, role FROM users
        WHERE is_master = 0
-       ${assignableUsersFilter(req)}
-       ORDER BY email ASC`
+       ${filter.sql}
+       ORDER BY email ASC`,
+      ...filter.params
     );
     res.json(users);
   } catch (err) {
