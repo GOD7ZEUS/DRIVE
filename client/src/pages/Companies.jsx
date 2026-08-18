@@ -121,6 +121,23 @@ export default function Companies() {
     }
   }
 
+  async function handleDeleteCompany(e, company) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm(`Delete company "${company.name}"? This can't be undone.`)) return;
+    try {
+      await api.deleteCompany(company.id);
+      setEditingCompanyId(null);
+      if (expandedId === company.id) {
+        setExpandedId(null);
+        setDepartments(null);
+      }
+      load();
+    } catch (err) {
+      setEditCompanyError(err.message);
+    }
+  }
+
   function startEditDept(e, dept) {
     e.stopPropagation();
     setEditingDeptId(dept.id);
@@ -133,6 +150,21 @@ export default function Companies() {
     e.stopPropagation();
     try {
       await api.updateDepartment(company.id, deptId, editDeptName);
+      setEditingDeptId(null);
+      const rows = await api.getCompanyDepartments(company.id);
+      setDepartments(rows);
+      load();
+    } catch (err) {
+      setEditDeptError(err.message);
+    }
+  }
+
+  async function handleDeleteDept(e, company, dept) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm(`Delete department "${dept.name}"? This can't be undone.`)) return;
+    try {
+      await api.deleteDepartment(company.id, dept.id);
       setEditingDeptId(null);
       const rows = await api.getCompanyDepartments(company.id);
       setDepartments(rows);
@@ -226,6 +258,11 @@ export default function Companies() {
                 <button type="button" onClick={() => setEditingCompanyId(null)}>
                   Cancel
                 </button>
+                {isMaster && (
+                  <button type="button" className="danger" onClick={(e) => handleDeleteCompany(e, c)}>
+                    Delete Company
+                  </button>
+                )}
                 {editCompanyError && <p className="error">{editCompanyError}</p>}
               </form>
             ) : (
@@ -308,6 +345,11 @@ export default function Companies() {
                         <button type="button" onClick={() => setEditingDeptId(null)}>
                           Cancel
                         </button>
+                        {isMaster && (
+                          <button type="button" className="danger" onClick={(e) => handleDeleteDept(e, c, d)}>
+                            Delete Department
+                          </button>
+                        )}
                         {editDeptError && <p className="error">{editDeptError}</p>}
                       </form>
                     ) : (

@@ -192,4 +192,76 @@ router.patch('/:id/departments/:deptId', async (req, res, next) => {
   }
 });
 
+// Deleting a company or department is master-only and blocked while
+// anything still lives inside it — projects, users, or (for a company) its
+// departments — rather than silently cascading, so nothing gets orphaned or
+// wiped without the master first moving/removing what's actually in it.
+router.delete('/:id/departments/:deptId', async (req, res, next) => {
+  try {
+    if (!req.user.is_master) {
+      return res.status(403).json({ error: 'only the master account can delete a department' });
+    }
+    const company = await get('SELECT * FROM companies WHERE id = ?', req.params.id);
+    if (!company) return res.status(404).json({ error: 'company not found' });
+    const department = await get(
+      'SELECT * FROM departments WHERE id = ? AND company_id = ?',
+      req.params.deptId,
+      req.params.id
+    );
+    if (!department) return res.status(404).json({ error: 'department not found' });
+
+    const projectCount = (
+      await get('SELECT COUNT(*) as count FROM projects WHERE department_id = ?', req.params.deptId)
+    ).count;
+    if (projectCount > 0) {
+      return res.status(400).json({ error: 'delete or move this department\'s projects first' });
+    }
+    const userCount = (
+      await get('SELECT COUNT(*) as count FROM users WHERE department_id = ?', req.params.deptId)
+    ).count;
+    if (userCount > 0) {
+      return res.status(400).json({ error: 'reassign this department\'s users first' });
+    }
+
+    await run('DELETE FROM departments WHERE id = ?', req.params.deptId);
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/:id', async (req, res, next) => {
+  try {
+    if (!req.user.is_master) {
+      return res.status(403).json({ error: 'only the master account can delete a company' });
+    }
+    const company = await get('SELECT * FROM companies WHERE id = ?', req.params.id);
+    if (!company) return res.status(404).json({ error: 'company not found' });
+
+    const departmentCount = (
+      await get('SELECT COUNT(*) as count FROM departments WHERE company_id = ?', req.params.id)
+    ).count;
+    if (departmentCount > 0) {
+      return res.status(400).json({ error: 'delete this company\'s departments first' });
+    }
+    const projectCount = (
+      await get('SELECT COUNT(*) as count FROM projects WHERE company_id = ?', req.params.id)
+    ).count;
+    if (projectCount > 0) {
+      return res.status(400).json({ error: 'delete or move this company\'s projects first' });
+    }
+    const userCount = (
+      await get('SELECT COUNT(*) as count FROM users WHERE company_id = ?', req.params.id)
+    ).count;
+    if (userCount > 0) {
+      return res.status(400).json({ error: 'reassign this company\'s users first' });
+    }
+
+    await run('DELETE FROM companies WHERE id = ?', req.params.id);
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

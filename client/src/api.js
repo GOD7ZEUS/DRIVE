@@ -112,11 +112,14 @@ export const api = {
   createCompany: (name, is_private) =>
     request('/companies', { method: 'POST', body: JSON.stringify({ name, is_private }) }),
   updateCompany: (id, data) => request(`/companies/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteCompany: (id) => request(`/companies/${id}`, { method: 'DELETE' }),
   getCompanyDepartments: (companyId) => request(`/companies/${companyId}/departments`),
   createDepartment: (companyId, name) =>
     request(`/companies/${companyId}/departments`, { method: 'POST', body: JSON.stringify({ name }) }),
   updateDepartment: (companyId, deptId, name) =>
     request(`/companies/${companyId}/departments/${deptId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  deleteDepartment: (companyId, deptId) =>
+    request(`/companies/${companyId}/departments/${deptId}`, { method: 'DELETE' }),
 
   chat: (messages) => request('/chat', { method: 'POST', body: JSON.stringify({ messages }) }),
 };
