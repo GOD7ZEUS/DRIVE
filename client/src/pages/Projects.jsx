@@ -224,25 +224,27 @@ export default function Projects() {
 
       <div className="list">
         {visibleProjects.map((p) => (
-          <Link key={p.id} to={`/projects/${p.id}`} className="list-item">
-            <div>
+          <Link key={p.id} to={`/projects/${p.id}`} className="list-item project-row">
+            <div className="list-item-info">
               <div className="title">{p.name}</div>
               {canPickCompany && (
-                <div className="muted">
+                <div className="muted project-meta">
                   {p.company} <span className="key-tag">Co.{p.company_id}</span> / {p.department}{' '}
                   <span className="key-tag">Dept.{p.department_id}</span>
                 </div>
               )}
-              {p.description && <div className="muted">{p.description}</div>}
+              {p.description && <div className="muted project-meta">{p.description}</div>}
+            </div>
+            <div className="project-status-col">
+              <StatusBadge status={p.status} />
               {(p.responsible_person || p.current_rollout_date) && (
-                <div className="muted">
+                <div className="muted project-owner">
                   {p.responsible_person && `Owner: ${p.responsible_person}`}
                   {p.responsible_person && p.current_rollout_date && ' · '}
                   {p.current_rollout_date && `Rollout: ${formatDate(p.current_rollout_date)}`}
                 </div>
               )}
             </div>
-            <StatusBadge status={p.status} />
           </Link>
         ))}
       </div>

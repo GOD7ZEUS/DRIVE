@@ -568,6 +568,40 @@ a.list-item:hover {
   font-size: 13px;
 }
 
+/* Project cards on the Projects list: flex-basis must be 0, not auto — with
+   auto, the browser decides whether to wrap the row using the info column's
+   max-content (unwrapped, single-line) width, which for a long description
+   is huge regardless of min-width, forcing the status badge onto its own
+   left-aligned line below instead of staying pinned top-right. */
+.project-row {
+  align-items: flex-start;
+  flex-wrap: nowrap;
+}
+
+.project-row .list-item-info {
+  min-width: 0;
+  flex: 1 1 0;
+}
+
+.project-row .project-meta {
+  font-weight: 600;
+}
+
+.project-row .project-status-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.project-row .project-owner {
+  font-weight: 700;
+  font-size: 15px;
+  opacity: 1;
+  text-align: right;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
