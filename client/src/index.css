@@ -591,15 +591,22 @@ a.list-item:hover {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 6px;
+  gap: 12px;
   flex-shrink: 0;
 }
 
 .project-row .project-owner {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
   font-weight: 700;
-  font-size: 15px;
+  font-size: 13px;
   opacity: 1;
-  text-align: right;
+  white-space: nowrap;
 }
 
 .badge {
