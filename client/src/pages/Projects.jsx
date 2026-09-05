@@ -237,12 +237,11 @@ export default function Projects() {
             </div>
             <div className="project-status-col">
               <StatusBadge status={p.status} />
-              {(p.responsible_person || p.current_rollout_date) && (
-                <div className="muted project-owner">
-                  {p.responsible_person && `Owner: ${p.responsible_person}`}
-                  {p.responsible_person && p.current_rollout_date && ' · '}
-                  {p.current_rollout_date && `Rollout: ${formatDate(p.current_rollout_date)}`}
-                </div>
+              {p.current_rollout_date && (
+                <div className="muted project-owner">Rollout: {formatDate(p.current_rollout_date)}</div>
+              )}
+              {p.responsible_person && (
+                <div className="muted project-owner">RESP: {p.responsible_person}</div>
               )}
             </div>
           </Link>
