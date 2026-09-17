@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { get, all, run, getOrCreateCompany, getOrCreateDepartment, displayName } from '../db.js';
+import { get, all, run, getOrCreateCompany, getOrCreateDepartment, getOrCreateSubDepartment, displayName } from '../db.js';
 import { requireRole, matchesScope, scopeClause, blockedByPrivacy } from '../middleware/auth.js';
 import { sendTaskAssignedEmail } from '../notifications.js';
 
@@ -138,9 +138,16 @@ router.post('/', canEdit, async (req, res, next) => {
       }
     }
 
+    // Sub-department is always optional — a plain Department is still a
+    // complete, valid project, exactly as before this existed.
+    let subDepartmentRow = { id: null, name: null };
+    if (req.body.sub_department && req.body.sub_department.trim()) {
+      subDepartmentRow = await getOrCreateSubDepartment(departmentRow.id, req.body.sub_department);
+    }
+
     const result = await run(
-      `INSERT INTO projects (name, description, status, company, department, company_id, department_id, responsible_person, responsible_user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO projects (name, description, status, company, department, company_id, department_id, sub_department, sub_department_id, responsible_person, responsible_user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       name.trim(),
       description,
       status,
@@ -148,11 +155,47 @@ router.post('/', canEdit, async (req, res, next) => {
       departmentRow.name,
       companyRow.id,
       departmentRow.id,
+      subDepartmentRow.name,
+      subDepartmentRow.id,
       responsibleUser ? displayName(responsibleUser) : '',
       responsibleUser ? responsibleUser.id : null
     );
     const project = await get('SELECT * FROM projects WHERE id = ?', result.lastInsertRowid);
     res.status(201).json(project);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Sub-departments have no management page of their own — the New Project
+// form (and a project's own Edit tab) are the only places they're picked or
+// created, so this lookup lives here rather than under /api/companies
+// (which Admin/View can't reach at all). Anyone who could plausibly be
+// creating a project under this department can list its sub-departments:
+// master and Super Admin see any (Super Admin still loses a private
+// company), a Pro Admin only their own company's departments, and Admin/View
+// only their own single department.
+router.get('/departments/:deptId/sub-departments', async (req, res, next) => {
+  try {
+    const department = await get('SELECT * FROM departments WHERE id = ?', req.params.deptId);
+    if (!department) return res.status(404).json({ error: 'department not found' });
+    const company = await get('SELECT * FROM companies WHERE id = ?', department.company_id);
+    if (!company) return res.status(404).json({ error: 'department not found' });
+
+    const allowed =
+      req.user.is_master ||
+      req.user.role === 'super_admin' ||
+      (req.user.role === 'pro_admin' && req.user.company_id === company.id) ||
+      req.user.department_id === department.id;
+    if (!allowed || (await blockedByPrivacy(req, department))) {
+      return res.status(404).json({ error: 'department not found' });
+    }
+
+    const subDepartments = await all(
+      'SELECT * FROM sub_departments WHERE department_id = ? ORDER BY name',
+      req.params.deptId
+    );
+    res.json(subDepartments);
   } catch (err) {
     next(err);
   }
@@ -200,9 +243,58 @@ router.patch('/:id', canEdit, async (req, res, next) => {
       return res.status(404).json({ error: 'project not found' });
     }
 
-    const { name, description, status, responsible_user_id } = req.body;
+    const { name, description, status, responsible_user_id, company, department, sub_department } = req.body;
     if (status !== undefined && !PROJECT_STATUSES.includes(status)) {
       return res.status(400).json({ error: `status must be one of ${PROJECT_STATUSES.join(', ')}` });
+    }
+
+    // Moving a project to a different company/department/sub-department is a
+    // structural change — reserved for Super Admin (any company) and Pro
+    // Admin (their own company only), not open to a plain Admin.
+    if (
+      (company !== undefined || department !== undefined || sub_department !== undefined) &&
+      !['super_admin', 'pro_admin'].includes(req.user.role)
+    ) {
+      return res.status(403).json({ error: "only Super Admin can change a project's department" });
+    }
+
+    let companyRow = { id: project.company_id, name: project.company };
+    let departmentRow = { id: project.department_id, name: project.department };
+    let subDepartmentRow = { id: project.sub_department_id, name: project.sub_department };
+    let departmentChanged = false;
+
+    if (req.user.role === 'pro_admin') {
+      if (department !== undefined) {
+        if (!department.trim()) return res.status(400).json({ error: 'department is required' });
+        companyRow = { id: req.user.company_id, name: req.user.company };
+        departmentRow = await getOrCreateDepartment(companyRow.id, department);
+        departmentChanged = departmentRow.id !== project.department_id;
+      }
+    } else if (req.user.role === 'super_admin' && (company !== undefined || department !== undefined)) {
+      const companyName = company !== undefined ? company : project.company;
+      const departmentName = department !== undefined ? department : project.department;
+      if (!companyName || !companyName.trim() || !departmentName || !departmentName.trim()) {
+        return res.status(400).json({ error: 'company and department are required' });
+      }
+      companyRow = await getOrCreateCompany(companyName);
+      // Same guard as project creation: block attaching to a private company
+      // by exact-name guess rather than silently succeeding.
+      if (companyRow.is_private && !req.user.is_master) {
+        return res.status(400).json({ error: 'company and department are required' });
+      }
+      departmentRow = await getOrCreateDepartment(companyRow.id, departmentName);
+      departmentChanged = departmentRow.id !== project.department_id;
+    }
+
+    if (sub_department !== undefined) {
+      subDepartmentRow =
+        sub_department && sub_department.trim()
+          ? await getOrCreateSubDepartment(departmentRow.id, sub_department)
+          : { id: null, name: null };
+    } else if (departmentChanged) {
+      // The previous sub-department belongs to the old department — carrying
+      // its id forward would point at a sub-department under the wrong one.
+      subDepartmentRow = { id: null, name: null };
     }
 
     let responsiblePersonText = project.responsible_person;
@@ -232,6 +324,7 @@ router.patch('/:id', canEdit, async (req, res, next) => {
     await run(
       `UPDATE projects SET
         name = ?, description = ?, status = ?, responsible_person = ?, responsible_user_id = ?,
+        company = ?, department = ?, company_id = ?, department_id = ?, sub_department = ?, sub_department_id = ?,
         completed_at = ?, updated_at = datetime('now')
        WHERE id = ?`,
       name !== undefined ? name : project.name,
@@ -239,6 +332,12 @@ router.patch('/:id', canEdit, async (req, res, next) => {
       status !== undefined ? status : project.status,
       responsiblePersonText,
       newResponsibleUserId,
+      companyRow.name,
+      departmentRow.name,
+      companyRow.id,
+      departmentRow.id,
+      subDepartmentRow.name,
+      subDepartmentRow.id,
       completedAt,
       req.params.id
     );

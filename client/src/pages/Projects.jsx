@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import CompanyDepartmentFields from '../components/CompanyDepartmentFields.jsx';
+import SubDepartmentField from '../components/SubDepartmentField.jsx';
 import { formatUserName } from '../userDisplay.js';
 import { formatDate } from '../dateFormat.js';
 
@@ -25,6 +26,8 @@ export default function Projects() {
   const [responsibleUserId, setResponsibleUserId] = useState('');
   const [company, setCompany] = useState('');
   const [department, setDepartment] = useState('');
+  const [departmentId, setDepartmentId] = useState(null);
+  const [subDepartment, setSubDepartment] = useState('');
   const [assignableUsers, setAssignableUsers] = useState([]);
   const [ownDepartments, setOwnDepartments] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -92,6 +95,9 @@ export default function Projects() {
         payload.company = company;
         payload.department = department;
       }
+      if (subDepartment.trim()) {
+        payload.sub_department = subDepartment;
+      }
       await api.createProject(payload);
       setName('');
       setDescription('');
@@ -99,6 +105,8 @@ export default function Projects() {
       setResponsibleUserId('');
       setCompany('');
       setDepartment('');
+      setDepartmentId(null);
+      setSubDepartment('');
       setAssignableUsers([]);
       setShowForm(false);
       load();
@@ -180,31 +188,53 @@ export default function Projects() {
             </select>
           </label>
           {isSuperAdmin ? (
-            <CompanyDepartmentFields
-              company={company}
-              department={department}
-              onCompanyChange={setCompany}
-              onDepartmentChange={setDepartment}
-            />
+            <>
+              <CompanyDepartmentFields
+                company={company}
+                department={department}
+                onCompanyChange={setCompany}
+                onDepartmentChange={setDepartment}
+                onIdsChange={(_companyId, deptId) => setDepartmentId(deptId)}
+              />
+              <SubDepartmentField departmentId={departmentId} value={subDepartment} onChange={setSubDepartment} />
+            </>
           ) : isProAdmin ? (
-            <label>
-              Department
-              <br />
-              <select value={department} onChange={(e) => setDepartment(e.target.value)} required>
-                <option value="" disabled>
-                  {ownDepartments ? 'Select a department…' : 'Loading…'}
-                </option>
-                {ownDepartments?.map((d) => (
-                  <option key={d.id} value={d.name}>
-                    {d.name}
+            <>
+              <label>
+                Department
+                <br />
+                <select
+                  value={department}
+                  onChange={(e) => {
+                    setDepartment(e.target.value);
+                    const selected = ownDepartments?.find((d) => d.name === e.target.value);
+                    setDepartmentId(selected ? selected.id : null);
+                  }}
+                  required
+                >
+                  <option value="" disabled>
+                    {ownDepartments ? 'Select a department…' : 'Loading…'}
                   </option>
-                ))}
-              </select>
-            </label>
+                  {ownDepartments?.map((d) => (
+                    <option key={d.id} value={d.name}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <SubDepartmentField departmentId={departmentId} value={subDepartment} onChange={setSubDepartment} />
+            </>
           ) : (
-            <p className="muted">
-              Will be created under <strong>{user.company}</strong> / <strong>{user.department}</strong>
-            </p>
+            <>
+              <p className="muted">
+                Will be created under <strong>{user.company}</strong> / <strong>{user.department}</strong>
+              </p>
+              <SubDepartmentField
+                departmentId={user.department_id}
+                value={subDepartment}
+                onChange={setSubDepartment}
+              />
+            </>
           )}
           {error && <p className="error">{error}</p>}
           <div>
@@ -231,6 +261,12 @@ export default function Projects() {
                 <div className="muted project-meta">
                   {p.company} <span className="key-tag">Co.{p.company_id}</span> / {p.department}{' '}
                   <span className="key-tag">Dept.{p.department_id}</span>
+                  {p.sub_department && (
+                    <>
+                      {' / '}
+                      {p.sub_department} <span className="key-tag">Sub.{p.sub_department_id}</span>
+                    </>
+                  )}
                 </div>
               )}
               {p.description && <div className="muted project-meta">{p.description}</div>}

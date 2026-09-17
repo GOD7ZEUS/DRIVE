@@ -3,6 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
+import CompanyDepartmentFields from '../components/CompanyDepartmentFields.jsx';
+import SubDepartmentField from '../components/SubDepartmentField.jsx';
 import { formatUserName } from '../userDisplay.js';
 import { formatDate, formatDateTime } from '../dateFormat.js';
 
@@ -41,6 +43,15 @@ export default function ProjectDetail() {
 
   const [responsibleUserId, setResponsibleUserId] = useState('');
   const [showDetails, setShowDetails] = useState(false);
+
+  const [editingDepartment, setEditingDepartment] = useState(false);
+  const [editCompany, setEditCompany] = useState('');
+  const [editDepartmentName, setEditDepartmentName] = useState('');
+  const [editDepartmentId, setEditDepartmentId] = useState(null);
+  const [editSubDepartment, setEditSubDepartment] = useState('');
+  const [departmentError, setDepartmentError] = useState('');
+  const [savingDepartment, setSavingDepartment] = useState(false);
+  const [ownDepartments, setOwnDepartments] = useState(null);
 
   const [showMilestoneForm, setShowMilestoneForm] = useState(false);
   const [milestoneTitle, setMilestoneTitle] = useState('');
@@ -88,6 +99,35 @@ export default function ProjectDetail() {
     setResponsibleUserId(value);
     await api.updateProject(id, { responsible_user_id: value || null });
     load();
+  }
+
+  function startEditDepartment() {
+    setEditingDepartment(true);
+    setEditCompany(project.company || '');
+    setEditDepartmentName(project.department || '');
+    setEditDepartmentId(project.department_id || null);
+    setEditSubDepartment(project.sub_department || '');
+    setDepartmentError('');
+    if (user.role === 'pro_admin') {
+      api.getCompanyDepartments(user.company_id).then(setOwnDepartments).catch(() => setOwnDepartments([]));
+    }
+  }
+
+  async function handleSaveDepartment(e) {
+    e.preventDefault();
+    setSavingDepartment(true);
+    setDepartmentError('');
+    try {
+      const payload = { department: editDepartmentName, sub_department: editSubDepartment };
+      if (user.role === 'super_admin') payload.company = editCompany;
+      await api.updateProject(id, payload);
+      setEditingDepartment(false);
+      load();
+    } catch (err) {
+      setDepartmentError(err.message);
+    } finally {
+      setSavingDepartment(false);
+    }
   }
 
   async function handleDeleteProject() {
@@ -279,30 +319,108 @@ export default function ProjectDetail() {
               </td>
             </tr>
           )}
-          <tr>
-            <th>Company</th>
-            <td>
-              {project.company ? (
-                <>
-                  {project.company} <span className="key-tag">Co.{project.company_id}</span>
-                </>
-              ) : (
-                <span className="muted">—</span>
-              )}
-            </td>
-          </tr>
-          <tr>
-            <th>Department</th>
-            <td>
-              {project.department ? (
-                <>
-                  {project.department} <span className="key-tag">Dept.{project.department_id}</span>
-                </>
-              ) : (
-                <span className="muted">—</span>
-              )}
-            </td>
-          </tr>
+          {editingDepartment ? (
+            <tr>
+              <th>Company / Department</th>
+              <td>
+                <form className="inline-form" onSubmit={handleSaveDepartment}>
+                  {user.role === 'super_admin' ? (
+                    <CompanyDepartmentFields
+                      company={editCompany}
+                      department={editDepartmentName}
+                      onCompanyChange={setEditCompany}
+                      onDepartmentChange={setEditDepartmentName}
+                      onIdsChange={(_companyId, deptId) => setEditDepartmentId(deptId)}
+                      initialCompany={project.company}
+                      initialDepartment={project.department}
+                    />
+                  ) : (
+                    <label>
+                      Department
+                      <br />
+                      <select
+                        value={editDepartmentName}
+                        onChange={(e) => {
+                          setEditDepartmentName(e.target.value);
+                          const selected = ownDepartments?.find((d) => d.name === e.target.value);
+                          setEditDepartmentId(selected ? selected.id : null);
+                        }}
+                        required
+                      >
+                        <option value="" disabled>
+                          {ownDepartments ? 'Select a department…' : 'Loading…'}
+                        </option>
+                        {ownDepartments?.map((d) => (
+                          <option key={d.id} value={d.name}>
+                            {d.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  <SubDepartmentField
+                    departmentId={editDepartmentId}
+                    value={editSubDepartment}
+                    onChange={setEditSubDepartment}
+                    initialSubDepartment={project.sub_department}
+                  />
+                  <div className="row">
+                    <button type="submit" className="primary" disabled={savingDepartment}>
+                      Save
+                    </button>
+                    <button type="button" onClick={() => setEditingDepartment(false)}>
+                      Cancel
+                    </button>
+                  </div>
+                  {departmentError && <p className="error">{departmentError}</p>}
+                </form>
+              </td>
+            </tr>
+          ) : (
+            <>
+              <tr>
+                <th>Company</th>
+                <td>
+                  {project.company ? (
+                    <>
+                      {project.company} <span className="key-tag">Co.{project.company_id}</span>
+                    </>
+                  ) : (
+                    <span className="muted">—</span>
+                  )}
+                  {isSuperAdmin && (
+                    <button type="button" style={{ marginLeft: 10 }} onClick={startEditDepartment}>
+                      Edit
+                    </button>
+                  )}
+                </td>
+              </tr>
+              <tr>
+                <th>Department</th>
+                <td>
+                  {project.department ? (
+                    <>
+                      {project.department} <span className="key-tag">Dept.{project.department_id}</span>
+                    </>
+                  ) : (
+                    <span className="muted">—</span>
+                  )}
+                </td>
+              </tr>
+              <tr>
+                <th>Sub Department</th>
+                <td>
+                  {project.sub_department ? (
+                    <>
+                      {project.sub_department} <span className="key-tag">Sub.{project.sub_department_id}</span>
+                    </>
+                  ) : (
+                    <span className="muted">—</span>
+                  )}
+                </td>
+              </tr>
+            </>
+          )}
           <tr>
             <th>Description</th>
             <td>{project.description || <span className="muted">No description</span>}</td>

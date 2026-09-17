@@ -37,6 +37,7 @@ export const api = {
 
   getAssignableUsers: (projectId) => request(`/projects/${projectId}/assignable-users`),
   getAllAssignableUsers: () => request('/projects/assignable-users'),
+  getSubDepartments: (departmentId) => request(`/projects/departments/${departmentId}/sub-departments`),
   getProjectTasks: (projectId) => request(`/projects/${projectId}/tasks`),
   createTask: (projectId, data) =>
     request(`/projects/${projectId}/tasks`, { method: 'POST', body: JSON.stringify(data) }),

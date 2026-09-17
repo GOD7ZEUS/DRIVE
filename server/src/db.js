@@ -123,6 +123,14 @@ await db.executeMultiple(`
     set_by TEXT DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS sub_departments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+    name TEXT NOT NULL COLLATE NOCASE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(department_id, name)
+  );
 `);
 
 async function ensureColumn(table, column, definition) {
@@ -159,6 +167,8 @@ await ensureColumn('users', 'last_name', 'TEXT');
 await ensureColumn('projects', 'responsible_user_id', 'INTEGER REFERENCES users(id)');
 await ensureColumn('milestones', 'original_due_date', 'TEXT');
 await ensureColumn('companies', 'is_private', 'INTEGER NOT NULL DEFAULT 0');
+await ensureColumn('projects', 'sub_department_id', 'INTEGER REFERENCES sub_departments(id)');
+await ensureColumn('projects', 'sub_department', 'TEXT');
 
 // SQLite has no ALTER TABLE for CHECK constraints, so adding the pro_admin
 // role means rebuilding the users table: copy every existing column
@@ -222,6 +232,26 @@ export async function getOrCreateDepartment(companyId, name) {
     trimmed
   );
   return get('SELECT * FROM departments WHERE id = ?', result.lastInsertRowid);
+}
+
+// Unlike companies/departments, sub-departments have no dedicated management
+// page — the only place they're ever picked or created is the New Project
+// form (and a project's own Edit tab), so this getOrCreate is the sole way
+// a sub_departments row comes into existence.
+export async function getOrCreateSubDepartment(departmentId, name) {
+  const trimmed = name.trim();
+  const existing = await get(
+    'SELECT * FROM sub_departments WHERE department_id = ? AND name = ?',
+    departmentId,
+    trimmed
+  );
+  if (existing) return existing;
+  const result = await run(
+    'INSERT INTO sub_departments (department_id, name) VALUES (?, ?)',
+    departmentId,
+    trimmed
+  );
+  return get('SELECT * FROM sub_departments WHERE id = ?', result.lastInsertRowid);
 }
 
 const superAdminCount = (await get("SELECT COUNT(*) as count FROM users WHERE role = 'super_admin'"))
