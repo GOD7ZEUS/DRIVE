@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
+import bcrypt from 'bcryptjs';
 import { get, all, run, getOrCreateCompany, getOrCreateDepartment, getOrCreateSubDepartment, displayName } from '../db.js';
 import { requireRole, matchesScope, scopeClause, blockedByPrivacy } from '../middleware/auth.js';
 import { sendTaskAssignedEmail } from '../notifications.js';
@@ -7,6 +8,14 @@ import { sendTaskAssignedEmail } from '../notifications.js';
 const router = Router();
 const canEdit = requireRole('super_admin', 'pro_admin', 'admin');
 const superAdminOnly = requireRole('super_admin', 'pro_admin');
+
+// The plan-lock password hash never leaves the server — every project
+// response is scrubbed down to just a `plan_locked` boolean instead.
+function stripPlanLock(project) {
+  if (!project) return project;
+  const { plan_lock_hash, ...rest } = project;
+  return { ...rest, plan_locked: !!plan_lock_hash };
+}
 
 const PROJECT_STATUSES = ['planning', 'active', 'on_hold', 'completed'];
 
@@ -85,7 +94,7 @@ router.get('/', async (req, res, next) => {
          WHERE ${PRIVATE_COMPANY_EXCLUSION} ORDER BY created_at DESC`
       );
     }
-    res.json(projects);
+    res.json(projects.map(stripPlanLock));
   } catch (err) {
     next(err);
   }
@@ -161,7 +170,7 @@ router.post('/', canEdit, async (req, res, next) => {
       responsibleUser ? responsibleUser.id : null
     );
     const project = await get('SELECT * FROM projects WHERE id = ?', result.lastInsertRowid);
-    res.status(201).json(project);
+    res.status(201).json(stripPlanLock(project));
   } catch (err) {
     next(err);
   }
@@ -230,7 +239,7 @@ router.get('/:id', async (req, res, next) => {
     if (!project || !matchesScope(req, project) || (await blockedByPrivacy(req, project))) {
       return res.status(404).json({ error: 'project not found' });
     }
-    res.json(project);
+    res.json(stripPlanLock(project));
   } catch (err) {
     next(err);
   }
@@ -349,7 +358,9 @@ router.patch('/:id', canEdit, async (req, res, next) => {
     );
 
     res.json(
-      await get(`SELECT projects.*, ${CURRENT_ROLLOUT_DATE_SUBQUERY} FROM projects WHERE id = ?`, req.params.id)
+      stripPlanLock(
+        await get(`SELECT projects.*, ${CURRENT_ROLLOUT_DATE_SUBQUERY} FROM projects WHERE id = ?`, req.params.id)
+      )
     );
   } catch (err) {
     next(err);
@@ -364,6 +375,38 @@ router.delete('/:id', canEdit, async (req, res, next) => {
     }
     await run('DELETE FROM projects WHERE id = ?', req.params.id);
     res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Locking a project's plan documents behind a password is master-only —
+// not even a regular Super Admin can set or change it. Everything else
+// about the project (details, milestones, tasks) stays open as normal;
+// only the documents themselves require the password to view/download,
+// checked fresh on every request rather than granting any standing access.
+router.patch('/:id/lock', async (req, res, next) => {
+  try {
+    if (!req.user.is_master) {
+      return res.status(403).json({ error: 'only the master account can lock or unlock a project' });
+    }
+    const project = await get('SELECT id FROM projects WHERE id = ?', req.params.id);
+    if (!project) return res.status(404).json({ error: 'project not found' });
+
+    const { password } = req.body;
+    if (password) {
+      if (password.length < 4) {
+        return res.status(400).json({ error: 'password must be at least 4 characters' });
+      }
+      await run(
+        'UPDATE projects SET plan_lock_hash = ? WHERE id = ?',
+        bcrypt.hashSync(password, 10),
+        req.params.id
+      );
+      return res.json({ plan_locked: true });
+    }
+    await run('UPDATE projects SET plan_lock_hash = NULL WHERE id = ?', req.params.id);
+    res.json({ plan_locked: false });
   } catch (err) {
     next(err);
   }
@@ -556,11 +599,46 @@ router.post('/:id/plans', canEdit, (req, res, next) => {
   }
 });
 
+// A locked project's documents are never sent over a plain GET — that would
+// let anyone bypass the password just by hitting the link directly. Master
+// always bypasses the lock (they're the only one who can set it anyway).
 router.get('/:id/plans/:planId/download', async (req, res, next) => {
   try {
     const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
     if (!project || !matchesScope(req, project) || (await blockedByPrivacy(req, project))) {
       return res.status(404).json({ error: 'project not found' });
+    }
+    if (project.plan_lock_hash && !req.user.is_master) {
+      return res.status(403).json({ error: 'password required', plan_locked: true });
+    }
+    const plan = await get(
+      'SELECT * FROM project_plans WHERE id = ? AND project_id = ?',
+      req.params.planId,
+      req.params.id
+    );
+    if (!plan) return res.status(404).json({ error: 'plan not found' });
+    res.set('Content-Type', plan.mime_type);
+    res.set('Content-Disposition', `inline; filename="${encodeURIComponent(plan.filename)}"`);
+    res.send(Buffer.from(plan.data));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// The password-gated path for a locked project's documents — verified fresh
+// on every request rather than granting any standing/cached access, so
+// there's nothing to expire or revoke later.
+router.post('/:id/plans/:planId/download', async (req, res, next) => {
+  try {
+    const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
+    if (!project || !matchesScope(req, project) || (await blockedByPrivacy(req, project))) {
+      return res.status(404).json({ error: 'project not found' });
+    }
+    if (project.plan_lock_hash && !req.user.is_master) {
+      const { password } = req.body;
+      if (!password || !bcrypt.compareSync(password, project.plan_lock_hash)) {
+        return res.status(403).json({ error: 'incorrect password' });
+      }
     }
     const plan = await get(
       'SELECT * FROM project_plans WHERE id = ? AND project_id = ?',

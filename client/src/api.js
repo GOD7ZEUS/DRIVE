@@ -72,6 +72,23 @@ export const api = {
   },
   deletePlan: (projectId, planId) => request(`/projects/${projectId}/plans/${planId}`, { method: 'DELETE' }),
   getPlanDownloadUrl: (projectId, planId) => `${BASE_URL}/projects/${projectId}/plans/${planId}/download`,
+  downloadPlanWithPassword: async (projectId, planId, password) => {
+    const res = await fetch(`${BASE_URL}/projects/${projectId}/plans/${planId}/download`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const error = new Error(body.error || `Request failed: ${res.status}`);
+      error.status = res.status;
+      throw error;
+    }
+    return res.blob();
+  },
+  setProjectLock: (id, password) =>
+    request(`/projects/${id}/lock`, { method: 'PATCH', body: JSON.stringify({ password }) }),
 
   getDashboard: (companyId, departmentId) => {
     const params = new URLSearchParams();

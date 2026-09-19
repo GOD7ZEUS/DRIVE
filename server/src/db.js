@@ -169,6 +169,7 @@ await ensureColumn('milestones', 'original_due_date', 'TEXT');
 await ensureColumn('companies', 'is_private', 'INTEGER NOT NULL DEFAULT 0');
 await ensureColumn('projects', 'sub_department_id', 'INTEGER REFERENCES sub_departments(id)');
 await ensureColumn('projects', 'sub_department', 'TEXT');
+await ensureColumn('projects', 'plan_lock_hash', 'TEXT');
 
 // SQLite has no ALTER TABLE for CHECK constraints, so adding the pro_admin
 // role means rebuilding the users table: copy every existing column

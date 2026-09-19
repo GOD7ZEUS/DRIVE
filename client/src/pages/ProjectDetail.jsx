@@ -36,6 +36,17 @@ export default function ProjectDetail() {
   const [uploadingPlan, setUploadingPlan] = useState(false);
   const [planError, setPlanError] = useState('');
 
+  const [showLockForm, setShowLockForm] = useState(false);
+  const [lockPassword, setLockPassword] = useState('');
+  const [lockError, setLockError] = useState('');
+  const [savingLock, setSavingLock] = useState(false);
+
+  const [pendingPlan, setPendingPlan] = useState(null);
+  const [unlockPasswordInput, setUnlockPasswordInput] = useState('');
+  const [sessionUnlockPassword, setSessionUnlockPassword] = useState('');
+  const [unlockError, setUnlockError] = useState('');
+  const [unlocking, setUnlocking] = useState(false);
+
   const [showRolloutForm, setShowRolloutForm] = useState(false);
   const [newRolloutDate, setNewRolloutDate] = useState('');
   const [rolloutError, setRolloutError] = useState('');
@@ -235,6 +246,75 @@ export default function ProjectDetail() {
   async function handleDeletePlan(p) {
     if (!confirm(`Delete plan "${p.filename}"? This cannot be undone.`)) return;
     await api.deletePlan(id, p.id);
+    load();
+  }
+
+  async function openPlan(planId, password) {
+    const blob = await api.downloadPlanWithPassword(id, planId, password);
+    window.open(URL.createObjectURL(blob), '_blank');
+  }
+
+  async function handleViewPlan(p) {
+    if (!project.plan_locked || user.is_master) {
+      window.open(api.getPlanDownloadUrl(id, p.id), '_blank');
+      return;
+    }
+    if (sessionUnlockPassword) {
+      try {
+        await openPlan(p.id, sessionUnlockPassword);
+        return;
+      } catch {
+        // Password may have been changed since — fall through to re-prompt.
+        setSessionUnlockPassword('');
+      }
+    }
+    setPendingPlan(p);
+    setUnlockPasswordInput('');
+    setUnlockError('');
+  }
+
+  async function handleSubmitUnlock(e) {
+    e.preventDefault();
+    setUnlocking(true);
+    setUnlockError('');
+    try {
+      await openPlan(pendingPlan.id, unlockPasswordInput);
+      setSessionUnlockPassword(unlockPasswordInput);
+      setPendingPlan(null);
+      setUnlockPasswordInput('');
+    } catch (err) {
+      setUnlockError(err.message);
+    } finally {
+      setUnlocking(false);
+    }
+  }
+
+  function startEditLock() {
+    setShowLockForm(true);
+    setLockPassword('');
+    setLockError('');
+  }
+
+  async function handleSaveLock(e) {
+    e.preventDefault();
+    setSavingLock(true);
+    setLockError('');
+    try {
+      await api.setProjectLock(id, lockPassword);
+      setLockPassword('');
+      setShowLockForm(false);
+      load();
+    } catch (err) {
+      setLockError(err.message);
+    } finally {
+      setSavingLock(false);
+    }
+  }
+
+  async function handleRemoveLock() {
+    if (!confirm("Remove the password lock from this project's documents?")) return;
+    await api.setProjectLock(id, null);
+    setSessionUnlockPassword('');
     load();
   }
 
@@ -540,28 +620,82 @@ export default function ProjectDetail() {
 
       <div className="section">
         <div className="row-between">
-          <h2>Plan Documents</h2>
-          {canEdit && (
-            <>
-              <input
-                ref={planFileInputRef}
-                type="file"
-                accept=".pdf,.png,.jpg,.jpeg"
-                style={{ display: 'none' }}
-                onChange={handlePlanFileSelected}
-              />
-              <button onClick={() => planFileInputRef.current?.click()} disabled={uploadingPlan}>
-                {uploadingPlan ? 'Uploading…' : 'Upload New Plan'}
+          <h2>
+            Plan Documents {project.plan_locked && <span className="key-tag">🔒 LOCKED</span>}
+          </h2>
+          <div className="row">
+            {user.is_master && !showLockForm && (
+              <button onClick={startEditLock}>{project.plan_locked ? 'Change Password' : 'Lock with Password'}</button>
+            )}
+            {user.is_master && project.plan_locked && !showLockForm && (
+              <button className="danger" onClick={handleRemoveLock}>
+                Remove Lock
               </button>
-            </>
-          )}
+            )}
+            {canEdit && (
+              <>
+                <input
+                  ref={planFileInputRef}
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg"
+                  style={{ display: 'none' }}
+                  onChange={handlePlanFileSelected}
+                />
+                <button onClick={() => planFileInputRef.current?.click()} disabled={uploadingPlan}>
+                  {uploadingPlan ? 'Uploading…' : 'Upload New Plan'}
+                </button>
+              </>
+            )}
+          </div>
         </div>
+
+        {showLockForm && (
+          <form className="inline-form panel" onSubmit={handleSaveLock} style={{ marginBottom: 12 }}>
+            <input
+              type="password"
+              value={lockPassword}
+              onChange={(e) => setLockPassword(e.target.value)}
+              placeholder="New document password"
+              minLength={4}
+              required
+              autoFocus
+            />
+            <button type="submit" className="primary" disabled={savingLock}>
+              Save
+            </button>
+            <button type="button" onClick={() => setShowLockForm(false)}>
+              Cancel
+            </button>
+            {lockError && <p className="error">{lockError}</p>}
+          </form>
+        )}
 
         <p className="muted" style={{ marginBottom: 12 }}>
           PDF, PNG, or JPG, up to 5 MB. The most recent upload is the final plan — every earlier version
           stays available below it.
+          {project.plan_locked && !user.is_master && ' A password set by the master account is required to view or download these.'}
         </p>
         {planError && <p className="error">{planError}</p>}
+
+        {pendingPlan && (
+          <form className="inline-form panel" onSubmit={handleSubmitUnlock} style={{ marginBottom: 12 }}>
+            <input
+              type="password"
+              value={unlockPasswordInput}
+              onChange={(e) => setUnlockPasswordInput(e.target.value)}
+              placeholder={`Password to open "${pendingPlan.filename}"`}
+              autoFocus
+              required
+            />
+            <button type="submit" className="primary" disabled={unlocking}>
+              {unlocking ? 'Checking…' : 'Unlock'}
+            </button>
+            <button type="button" onClick={() => setPendingPlan(null)}>
+              Cancel
+            </button>
+            {unlockError && <p className="error">{unlockError}</p>}
+          </form>
+        )}
 
         {plans.length === 0 ? (
           <p className="muted">No plan documents uploaded yet.</p>
@@ -579,7 +713,7 @@ export default function ProjectDetail() {
                   </div>
                 </div>
                 <div className="row">
-                  <button type="button" onClick={() => window.open(api.getPlanDownloadUrl(id, p.id), '_blank')}>
+                  <button type="button" onClick={() => handleViewPlan(p)}>
                     View
                   </button>
                   {isSuperAdmin && (
