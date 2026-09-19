@@ -9,19 +9,24 @@ const router = Router();
 // default, but can optionally filter to one company (and, within it, one
 // department) via ?companyId=&departmentId=. A non-master super admin
 // additionally never sees data from a company master has marked private —
-// same invisibility as the Companies/Projects/Users lists.
+// same invisibility as the Companies/Projects/Users lists. Anyone can also
+// filter everything down to one person via ?userId= — a project's
+// Responsible Person for project-shaped rows, a task's Assignee for
+// task-shaped rows, and (since milestones have no assignee of their own)
+// the parent project's Responsible Person for milestone-shaped rows.
 function resolveFilter(req) {
+  const userId = req.query.userId ? Number(req.query.userId) : null;
   const scope = scopeClause(req);
-  if (scope) return scope;
+  if (scope) return { ...scope, userId };
   const companyId = req.query.companyId ? Number(req.query.companyId) : null;
   const departmentId = req.query.departmentId ? Number(req.query.departmentId) : null;
   if (req.user.is_master) {
-    return companyId ? { companyId, departmentId } : null;
+    return companyId ? { companyId, departmentId, userId } : { userId };
   }
-  return { companyId, departmentId, excludePrivate: true };
+  return { companyId, departmentId, userId, excludePrivate: true };
 }
 
-function filterSql(filter, tablePrefix = '') {
+function filterSql(filter, tablePrefix = '', userColumn = null) {
   const prefix = tablePrefix ? `${tablePrefix}.` : '';
   const conditions = [];
   const params = [];
@@ -36,6 +41,10 @@ function filterSql(filter, tablePrefix = '') {
   if (filter?.excludePrivate) {
     conditions.push(`${prefix}company_id NOT IN (SELECT id FROM companies WHERE is_private = 1)`);
   }
+  if (filter?.userId && userColumn) {
+    conditions.push(`${userColumn} = ?`);
+    params.push(filter.userId);
+  }
   if (conditions.length === 0) return { where: '', and: '', params: [] };
   return { where: `WHERE ${conditions.join(' AND ')}`, and: `AND ${conditions.join(' AND ')}`, params };
 }
@@ -43,13 +52,17 @@ function filterSql(filter, tablePrefix = '') {
 router.get('/', async (req, res, next) => {
   try {
     const filter = resolveFilter(req);
-    const { where: projectFilter, params: projectParams } = filterSql(filter);
-    const { and: taskProjectFilter } = filterSql(filter, 'projects');
-    const { and: projectScopeAnd } = filterSql(filter);
+    const { where: projectFilter, and: projectScopeAnd, params: filterParams } = filterSql(
+      filter,
+      '',
+      'responsible_user_id'
+    );
+    const { and: taskProjectFilter } = filterSql(filter, 'projects', 'tasks.assignee_user_id');
+    const { and: milestoneProjectFilter } = filterSql(filter, 'projects', 'projects.responsible_user_id');
 
     const projectsByStatus = await all(
       `SELECT status, COUNT(*) as count FROM projects ${projectFilter} GROUP BY status`,
-      ...projectParams
+      ...filterParams
     );
 
     const tasksByStatus = await all(
@@ -57,7 +70,7 @@ router.get('/', async (req, res, next) => {
        JOIN projects ON projects.id = tasks.project_id
        WHERE 1=1 ${taskProjectFilter}
        GROUP BY tasks.status`,
-      ...projectParams
+      ...filterParams
     );
 
     const overdueTasks = await all(
@@ -68,7 +81,7 @@ router.get('/', async (req, res, next) => {
          AND tasks.status != 'done'
          ${taskProjectFilter}
        ORDER BY tasks.due_date ASC`,
-      ...projectParams
+      ...filterParams
     );
 
     const upcomingTasks = await all(
@@ -80,7 +93,7 @@ router.get('/', async (req, res, next) => {
          AND tasks.status != 'done'
          ${taskProjectFilter}
        ORDER BY tasks.due_date ASC`,
-      ...projectParams
+      ...filterParams
     );
 
     const overdueMilestones = await all(
@@ -89,9 +102,9 @@ router.get('/', async (req, res, next) => {
        WHERE milestones.due_date IS NOT NULL
          AND milestones.due_date < date('now')
          AND milestones.status != 'done'
-         ${taskProjectFilter}
+         ${milestoneProjectFilter}
        ORDER BY milestones.due_date ASC`,
-      ...projectParams
+      ...filterParams
     );
 
     const upcomingMilestones = await all(
@@ -101,9 +114,9 @@ router.get('/', async (req, res, next) => {
          AND milestones.due_date >= date('now')
          AND milestones.due_date <= date('now', '+7 days')
          AND milestones.status != 'done'
-         ${taskProjectFilter}
+         ${milestoneProjectFilter}
        ORDER BY milestones.due_date ASC`,
-      ...projectParams
+      ...filterParams
     );
 
     // TAT (turn-around time): for a completed project, the days from creation
@@ -117,7 +130,7 @@ router.get('/', async (req, res, next) => {
       `SELECT AVG(julianday(completed_at) - julianday(created_at)) as avg_tat_days
        FROM projects
        WHERE completed_at IS NOT NULL ${projectScopeAnd}`,
-      ...projectParams
+      ...filterParams
     );
     const avgTatDays = avgTatRow[0]?.avg_tat_days != null ? Math.round(avgTatRow[0].avg_tat_days * 10) / 10 : null;
 
@@ -141,7 +154,7 @@ router.get('/', async (req, res, next) => {
          )
          ${projectScopeAnd}
        ORDER BY tat_deadline ASC`,
-      ...projectParams
+      ...filterParams
     );
 
     const projectsInTat = await all(
@@ -154,7 +167,7 @@ router.get('/', async (req, res, next) => {
          )
          ${projectScopeAnd}
        ORDER BY tat_deadline ASC`,
-      ...projectParams
+      ...filterParams
     );
 
     res.json({

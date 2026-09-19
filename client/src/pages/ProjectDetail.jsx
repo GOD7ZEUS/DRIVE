@@ -53,6 +53,11 @@ export default function ProjectDetail() {
   const [savingDepartment, setSavingDepartment] = useState(false);
   const [ownDepartments, setOwnDepartments] = useState(null);
 
+  const [editingDescription, setEditingDescription] = useState(false);
+  const [editDescriptionText, setEditDescriptionText] = useState('');
+  const [descriptionError, setDescriptionError] = useState('');
+  const [savingDescription, setSavingDescription] = useState(false);
+
   const [showMilestoneForm, setShowMilestoneForm] = useState(false);
   const [milestoneTitle, setMilestoneTitle] = useState('');
   const [milestoneDue, setMilestoneDue] = useState('');
@@ -127,6 +132,27 @@ export default function ProjectDetail() {
       setDepartmentError(err.message);
     } finally {
       setSavingDepartment(false);
+    }
+  }
+
+  function startEditDescription() {
+    setEditingDescription(true);
+    setEditDescriptionText(project.description || '');
+    setDescriptionError('');
+  }
+
+  async function handleSaveDescription(e) {
+    e.preventDefault();
+    setSavingDescription(true);
+    setDescriptionError('');
+    try {
+      await api.updateProject(id, { description: editDescriptionText });
+      setEditingDescription(false);
+      load();
+    } catch (err) {
+      setDescriptionError(err.message);
+    } finally {
+      setSavingDescription(false);
     }
   }
 
@@ -423,7 +449,37 @@ export default function ProjectDetail() {
           )}
           <tr>
             <th>Description</th>
-            <td>{project.description || <span className="muted">No description</span>}</td>
+            <td>
+              {editingDescription ? (
+                <form className="inline-form" onSubmit={handleSaveDescription}>
+                  <textarea
+                    value={editDescriptionText}
+                    onChange={(e) => setEditDescriptionText(e.target.value)}
+                    rows={3}
+                    style={{ width: '100%' }}
+                    autoFocus
+                  />
+                  <div className="row">
+                    <button type="submit" className="primary" disabled={savingDescription}>
+                      Save
+                    </button>
+                    <button type="button" onClick={() => setEditingDescription(false)}>
+                      Cancel
+                    </button>
+                  </div>
+                  {descriptionError && <p className="error">{descriptionError}</p>}
+                </form>
+              ) : (
+                <>
+                  {project.description || <span className="muted">No description</span>}
+                  {isSuperAdmin && (
+                    <button type="button" style={{ marginLeft: 10 }} onClick={startEditDescription}>
+                      Edit
+                    </button>
+                  )}
+                </>
+              )}
+            </td>
           </tr>
           <tr>
             <th>Created</th>

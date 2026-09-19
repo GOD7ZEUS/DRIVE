@@ -257,6 +257,12 @@ router.patch('/:id', canEdit, async (req, res, next) => {
     ) {
       return res.status(403).json({ error: "only Super Admin can change a project's department" });
     }
+    // Editing the description is likewise reserved for Super Admin/Pro
+    // Admin — a plain Admin can still change status/owner/etc., just not
+    // rewrite what the project actually is.
+    if (description !== undefined && !['super_admin', 'pro_admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'only Super Admin can edit the project description' });
+    }
 
     let companyRow = { id: project.company_id, name: project.company };
     let departmentRow = { id: project.department_id, name: project.department };

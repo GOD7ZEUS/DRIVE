@@ -73,10 +73,11 @@ export const api = {
   deletePlan: (projectId, planId) => request(`/projects/${projectId}/plans/${planId}`, { method: 'DELETE' }),
   getPlanDownloadUrl: (projectId, planId) => `${BASE_URL}/projects/${projectId}/plans/${planId}/download`,
 
-  getDashboard: (companyId, departmentId) => {
+  getDashboard: (companyId, departmentId, userId) => {
     const params = new URLSearchParams();
     if (companyId) params.set('companyId', companyId);
     if (departmentId) params.set('departmentId', departmentId);
+    if (userId) params.set('userId', userId);
     const qs = params.toString();
     return request(`/dashboard${qs ? `?${qs}` : ''}`);
   },
