@@ -33,6 +33,7 @@ export default function Projects() {
   const [submitting, setSubmitting] = useState(false);
   const [companyFilter, setCompanyFilter] = useState(searchParams.get('companyId') || 'all');
   const [departmentFilter, setDepartmentFilter] = useState(searchParams.get('departmentId') || 'all');
+  const [userFilter, setUserFilter] = useState(searchParams.get('userId') || 'all');
 
   function load() {
     api.getProjects().then(setProjects).catch((e) => setError(e.message));
@@ -40,12 +41,15 @@ export default function Projects() {
 
   useEffect(load, []);
 
+  // Fetched unconditionally (not just while the New Project form is open) —
+  // it now also feeds the User filter dropdown below.
   useEffect(() => {
-    if (!showForm) return;
     api.getAllAssignableUsers().then(setAssignableUsers).catch(() => setAssignableUsers([]));
-    if (isProAdmin) {
-      api.getCompanyDepartments(user.company_id).then(setOwnDepartments).catch(() => setOwnDepartments([]));
-    }
+  }, []);
+
+  useEffect(() => {
+    if (!showForm || !isProAdmin) return;
+    api.getCompanyDepartments(user.company_id).then(setOwnDepartments).catch(() => setOwnDepartments([]));
   }, [showForm, isProAdmin, user.company_id]);
 
   const companies = useMemo(() => {
@@ -63,19 +67,33 @@ export default function Projects() {
     return projects.filter((p) => {
       if (companyFilter !== 'all' && String(p.company_id) !== companyFilter) return false;
       if (departmentFilter !== 'all' && String(p.department_id) !== departmentFilter) return false;
+      if (userFilter !== 'all' && String(p.responsible_user_id) !== userFilter) return false;
       return true;
     });
-  }, [projects, companyFilter, departmentFilter, canPickCompany]);
+  }, [projects, companyFilter, departmentFilter, userFilter, canPickCompany]);
 
   function handleCompanyFilterChange(value) {
     setCompanyFilter(value);
     setDepartmentFilter('all');
-    setSearchParams(value === 'all' ? {} : { companyId: value });
+    const next = {};
+    if (value !== 'all') next.companyId = value;
+    if (userFilter !== 'all') next.userId = userFilter;
+    setSearchParams(next);
+  }
+
+  function handleUserFilterChange(value) {
+    setUserFilter(value);
+    const next = {};
+    if (companyFilter !== 'all') next.companyId = companyFilter;
+    if (departmentFilter !== 'all') next.departmentId = departmentFilter;
+    if (value !== 'all') next.userId = value;
+    setSearchParams(next);
   }
 
   function clearFilter() {
     setCompanyFilter('all');
     setDepartmentFilter('all');
+    setUserFilter('all');
     setSearchParams({});
   }
 
@@ -131,6 +149,16 @@ export default function Projects() {
               {companies.map(([id, name]) => (
                 <option key={id} value={id}>
                   {name}
+                </option>
+              ))}
+            </select>
+          )}
+          {canPickCompany && assignableUsers.length > 0 && (
+            <select value={userFilter} onChange={(e) => handleUserFilterChange(e.target.value)}>
+              <option value="all">All users</option>
+              {assignableUsers.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {formatUserName(u)}
                 </option>
               ))}
             </select>

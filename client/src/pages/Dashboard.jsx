@@ -4,7 +4,6 @@ import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { formatDate } from '../dateFormat.js';
-import { formatUserName } from '../userDisplay.js';
 
 const PROJECT_STATUS_ORDER = ['planning', 'active', 'on_hold', 'completed'];
 const PROJECT_STATUS_LABELS = {
@@ -20,20 +19,14 @@ export default function Dashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
   const companyFilter = searchParams.get('companyId') || 'all';
   const departmentFilter = searchParams.get('departmentId') || 'all';
-  const userFilter = searchParams.get('userId') || 'all';
 
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [companies, setCompanies] = useState(null);
   const [departments, setDepartments] = useState(null);
-  const [assignableUsers, setAssignableUsers] = useState(null);
 
   useEffect(() => {
     if (isSuperAdmin) api.getCompanies().then(setCompanies).catch(() => setCompanies([]));
-  }, [isSuperAdmin]);
-
-  useEffect(() => {
-    if (isSuperAdmin) api.getAllAssignableUsers().then(setAssignableUsers).catch(() => setAssignableUsers([]));
   }, [isSuperAdmin]);
 
   useEffect(() => {
@@ -47,32 +40,16 @@ export default function Dashboard() {
   useEffect(() => {
     const companyId = companyFilter !== 'all' ? companyFilter : undefined;
     const departmentId = departmentFilter !== 'all' ? departmentFilter : undefined;
-    const userId = userFilter !== 'all' ? userFilter : undefined;
     setData(null);
-    api.getDashboard(companyId, departmentId, userId).then(setData).catch((e) => setError(e.message));
-  }, [companyFilter, departmentFilter, userFilter]);
+    api.getDashboard(companyId, departmentId).then(setData).catch((e) => setError(e.message));
+  }, [companyFilter, departmentFilter]);
 
   function handleCompanyFilterChange(value) {
-    const next = {};
-    if (value !== 'all') next.companyId = value;
-    if (userFilter !== 'all') next.userId = userFilter;
-    setSearchParams(next);
+    setSearchParams(value === 'all' ? {} : { companyId: value });
   }
 
   function handleDepartmentFilterChange(value) {
-    const next = {};
-    if (companyFilter !== 'all') next.companyId = companyFilter;
-    if (value !== 'all') next.departmentId = value;
-    if (userFilter !== 'all') next.userId = userFilter;
-    setSearchParams(next);
-  }
-
-  function handleUserFilterChange(value) {
-    const next = {};
-    if (companyFilter !== 'all') next.companyId = companyFilter;
-    if (departmentFilter !== 'all') next.departmentId = departmentFilter;
-    if (value !== 'all') next.userId = value;
-    setSearchParams(next);
+    setSearchParams(value === 'all' ? { companyId: companyFilter } : { companyId: companyFilter, departmentId: value });
   }
 
   if (error) return <p className="error">{error}</p>;
@@ -104,19 +81,6 @@ export default function Dashboard() {
                   {departments.map((d) => (
                     <option key={d.id} value={d.id}>
                       {d.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {assignableUsers && assignableUsers.length > 0 && (
-              <label className="filter-group">
-                <span className="muted">User</span>
-                <select value={userFilter} onChange={(e) => handleUserFilterChange(e.target.value)}>
-                  <option value="all">All users</option>
-                  {assignableUsers.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {formatUserName(u)}
                     </option>
                   ))}
                 </select>
