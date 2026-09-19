@@ -568,6 +568,13 @@ a.list-item:hover {
   font-size: 13px;
 }
 
+/* Plain text collapses newlines by default — this keeps line breaks (and
+   so bullet points typed on their own lines) intact wherever free-form text
+   like a project description is displayed back, not just while editing it. */
+.multiline {
+  white-space: pre-wrap;
+}
+
 /* Project cards on the Projects list: flex-basis must be 0, not auto — with
    auto, the browser decides whether to wrap the row using the info column's
    max-content (unwrapped, single-line) width, which for a long description

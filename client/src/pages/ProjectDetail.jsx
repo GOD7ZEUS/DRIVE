@@ -471,7 +471,9 @@ export default function ProjectDetail() {
                 </form>
               ) : (
                 <>
-                  {project.description || <span className="muted">No description</span>}
+                  <span className="multiline">
+                    {project.description || <span className="muted">No description</span>}
+                  </span>
                   {isSuperAdmin && (
                     <button type="button" style={{ marginLeft: 10 }} onClick={startEditDescription}>
                       Edit

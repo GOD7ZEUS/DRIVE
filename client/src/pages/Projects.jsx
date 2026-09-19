@@ -269,7 +269,7 @@ export default function Projects() {
                   )}
                 </div>
               )}
-              {p.description && <div className="muted project-meta">{p.description}</div>}
+              {p.description && <div className="muted project-meta multiline">{p.description}</div>}
             </div>
             <div className="project-status-col">
               <StatusBadge status={p.status} />
