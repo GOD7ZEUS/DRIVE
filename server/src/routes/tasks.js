@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { get, all, run, displayName } from '../db.js';
+import { get, all, run, displayName, logAudit, describeChanges } from '../db.js';
 import { requireRole, matchesScope, scopeClause, blockedByPrivacy } from '../middleware/auth.js';
 import { sendTaskAssignedEmail } from '../notifications.js';
 
@@ -116,6 +116,23 @@ router.patch('/:id', canEdit, async (req, res, next) => {
     }
 
     const updatedTask = await get('SELECT * FROM tasks WHERE id = ?', req.params.id);
+
+    const changeSummary = describeChanges(
+      task,
+      { title: updatedTask.title, assignee: newAssigneeText, status: updatedTask.status, due_date: updatedTask.due_date },
+      { title: 'title', assignee: 'assignee', status: 'status', due_date: 'due date' }
+    );
+    if (changeSummary) {
+      await logAudit({
+        actor: req.user,
+        action: 'updated',
+        entityType: 'task',
+        entityId: task.id,
+        entityName: updatedTask.title,
+        details: changeSummary,
+      });
+    }
+
     if (assigneeChangedTo) {
       const project = await get('SELECT * FROM projects WHERE id = ?', updatedTask.project_id);
       sendTaskAssignedEmail(assigneeChangedTo.email, updatedTask, project);
@@ -131,6 +148,13 @@ router.delete('/:id', canEdit, async (req, res, next) => {
     const task = await loadScopedTask(req);
     if (!task) return res.status(404).json({ error: 'task not found' });
     await run('DELETE FROM tasks WHERE id = ?', req.params.id);
+    await logAudit({
+      actor: req.user,
+      action: 'deleted',
+      entityType: 'task',
+      entityId: task.id,
+      entityName: task.title,
+    });
     res.status(204).end();
   } catch (err) {
     next(err);

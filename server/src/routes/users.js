@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import { get, all, run, getOrCreateCompany, getOrCreateDepartment } from '../db.js';
+import { get, all, run, getOrCreateCompany, getOrCreateDepartment, logAudit, describeChanges } from '../db.js';
 
 const router = Router();
 const ASSIGNABLE_ROLES = ['admin', 'view'];
@@ -258,6 +258,35 @@ router.patch('/:id', async (req, res, next) => {
       req.params.id
     );
 
+    const afterValues = {
+      role: role !== undefined ? role : user.role,
+      first_name: first_name !== undefined ? first_name.trim() : user.first_name,
+      last_name: last_name !== undefined ? last_name.trim() : user.last_name,
+      company: companyRow.name,
+      department: departmentRow.name,
+    };
+    const changeParts = [
+      describeChanges(user, afterValues, {
+        role: 'role',
+        first_name: 'first name',
+        last_name: 'last name',
+        company: 'company',
+        department: 'department',
+      }),
+    ];
+    if (password !== undefined) changeParts.push('password changed');
+    const changeSummary = changeParts.filter(Boolean).join('; ');
+    if (changeSummary) {
+      await logAudit({
+        actor: req.user,
+        action: 'updated',
+        entityType: 'user',
+        entityId: user.id,
+        entityName: `${afterValues.first_name} ${afterValues.last_name}`.trim() || user.email,
+        details: changeSummary,
+      });
+    }
+
     res.json(
       await get(
         'SELECT id, email, first_name, last_name, role, company, department, company_id, department_id, is_master, created_at FROM users WHERE id = ?',
@@ -296,6 +325,14 @@ router.delete('/:id', async (req, res, next) => {
       return res.status(403).json({ error: 'only the master account can delete a Pro Admin account' });
     }
     await run('DELETE FROM users WHERE id = ?', req.params.id);
+    await logAudit({
+      actor: req.user,
+      action: 'deleted',
+      entityType: 'user',
+      entityId: user.id,
+      entityName: `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email,
+      details: `role: ${user.role}`,
+    });
     res.status(204).end();
   } catch (err) {
     next(err);

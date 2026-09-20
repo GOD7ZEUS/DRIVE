@@ -13,6 +13,7 @@ import milestonesRouter from './routes/milestones.js';
 import tasksRouter from './routes/tasks.js';
 import dashboardRouter from './routes/dashboard.js';
 import chatRouter from './routes/chat.js';
+import auditLogRouter from './routes/auditLog.js';
 import { requireAuth, requireRole } from './middleware/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -48,6 +49,7 @@ app.use('/api/milestones', requireAuth, milestonesRouter);
 app.use('/api/tasks', requireAuth, tasksRouter);
 app.use('/api/dashboard', requireAuth, dashboardRouter);
 app.use('/api/chat', requireAuth, chatRouter);
+app.use('/api/audit-log', requireAuth, auditLogRouter);
 
 if (process.env.NODE_ENV === 'production') {
   const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');

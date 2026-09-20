@@ -8,6 +8,7 @@ import ProjectDetail from './pages/ProjectDetail.jsx';
 import TaskDetail from './pages/TaskDetail.jsx';
 import Users from './pages/Users.jsx';
 import Companies from './pages/Companies.jsx';
+import ActivityLog from './pages/ActivityLog.jsx';
 import Login from './pages/Login.jsx';
 import LoadingScreen from './components/LoadingScreen.jsx';
 import ChangePasswordModal from './components/ChangePasswordModal.jsx';
@@ -20,6 +21,7 @@ export default function App() {
   const [theme, toggleTheme] = useTheme();
   const location = useLocation();
   const [showChangePassword, setShowChangePassword] = useState(false);
+  const [showChangeSecurityQuestion, setShowChangeSecurityQuestion] = useState(false);
   const [showDrawer, setShowDrawer] = useState(false);
 
   if (loading) return <LoadingScreen />;
@@ -57,6 +59,11 @@ export default function App() {
             Users
           </NavLink>
         )}
+        {user.is_master && (
+          <NavLink to="/activity-log" className={({ isActive }) => (isActive ? 'active' : '')}>
+            Activity Log
+          </NavLink>
+        )}
       </nav>
       {showDrawer && (
         <AccountDrawer
@@ -68,11 +75,22 @@ export default function App() {
             setShowDrawer(false);
             setShowChangePassword(true);
           }}
+          onOpenSecurityQuestion={() => {
+            setShowDrawer(false);
+            setShowChangeSecurityQuestion(true);
+          }}
           onLogout={logout}
         />
       )}
       {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} />}
       {needsSecurityQuestion && <SecurityQuestionModal dismissible={false} onSaved={refreshUser} />}
+      {showChangeSecurityQuestion && (
+        <SecurityQuestionModal
+          dismissible
+          onClose={() => setShowChangeSecurityQuestion(false)}
+          onSaved={refreshUser}
+        />
+      )}
       <main className="content" key={location.pathname}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
@@ -81,6 +99,7 @@ export default function App() {
           <Route path="/projects/:id" element={<ProjectDetail />} />
           <Route path="/tasks/:id" element={<TaskDetail />} />
           {canManageOrg && <Route path="/users" element={<Users />} />}
+          {user.is_master && <Route path="/activity-log" element={<ActivityLog />} />}
         </Routes>
       </main>
       <ChatWidget />

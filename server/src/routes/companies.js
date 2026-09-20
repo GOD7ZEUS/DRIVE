@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { get, all, run } from '../db.js';
+import { get, all, run, logAudit, describeChanges } from '../db.js';
 
 const router = Router();
 
@@ -97,6 +97,22 @@ router.patch('/:id', async (req, res, next) => {
 
     await run('UPDATE companies SET name = ?, is_private = ? WHERE id = ?', newName, newIsPrivate, req.params.id);
 
+    const changeSummary = describeChanges(
+      company,
+      { name: newName, is_private: newIsPrivate },
+      { name: 'name', is_private: 'private' }
+    );
+    if (changeSummary) {
+      await logAudit({
+        actor: req.user,
+        action: 'updated',
+        entityType: 'company',
+        entityId: company.id,
+        entityName: newName,
+        details: changeSummary,
+      });
+    }
+
     // Renaming a company doesn't retroactively rename it on every project's
     // denormalized `company` text column, but every read that matters joins
     // through company_id — the plain-text copies are cosmetic/legacy fields
@@ -186,6 +202,16 @@ router.patch('/:id/departments/:deptId', async (req, res, next) => {
     }
 
     await run('UPDATE departments SET name = ? WHERE id = ?', name.trim(), req.params.deptId);
+    if (name.trim() !== department.name) {
+      await logAudit({
+        actor: req.user,
+        action: 'updated',
+        entityType: 'department',
+        entityId: department.id,
+        entityName: name.trim(),
+        details: `name: ${department.name} → ${name.trim()}`,
+      });
+    }
     res.json(await get('SELECT * FROM departments WHERE id = ?', req.params.deptId));
   } catch (err) {
     next(err);
@@ -224,6 +250,14 @@ router.delete('/:id/departments/:deptId', async (req, res, next) => {
     }
 
     await run('DELETE FROM departments WHERE id = ?', req.params.deptId);
+    await logAudit({
+      actor: req.user,
+      action: 'deleted',
+      entityType: 'department',
+      entityId: department.id,
+      entityName: department.name,
+      details: `from company "${company.name}"`,
+    });
     res.status(204).end();
   } catch (err) {
     next(err);
@@ -258,6 +292,13 @@ router.delete('/:id', async (req, res, next) => {
     }
 
     await run('DELETE FROM companies WHERE id = ?', req.params.id);
+    await logAudit({
+      actor: req.user,
+      action: 'deleted',
+      entityType: 'company',
+      entityId: company.id,
+      entityName: company.name,
+    });
     res.status(204).end();
   } catch (err) {
     next(err);

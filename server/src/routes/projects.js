@@ -1,7 +1,17 @@
 import { Router } from 'express';
 import multer from 'multer';
 import bcrypt from 'bcryptjs';
-import { get, all, run, getOrCreateCompany, getOrCreateDepartment, getOrCreateSubDepartment, displayName } from '../db.js';
+import {
+  get,
+  all,
+  run,
+  getOrCreateCompany,
+  getOrCreateDepartment,
+  getOrCreateSubDepartment,
+  displayName,
+  logAudit,
+  describeChanges,
+} from '../db.js';
 import { requireRole, matchesScope, scopeClause, blockedByPrivacy } from '../middleware/auth.js';
 import { sendTaskAssignedEmail } from '../notifications.js';
 
@@ -357,6 +367,35 @@ router.patch('/:id', canEdit, async (req, res, next) => {
       req.params.id
     );
 
+    const afterValues = {
+      name: name !== undefined ? name : project.name,
+      description: description !== undefined ? description : project.description,
+      status: status !== undefined ? status : project.status,
+      responsible_person: responsiblePersonText,
+      company: companyRow.name,
+      department: departmentRow.name,
+      sub_department: subDepartmentRow.name,
+    };
+    const changeSummary = describeChanges(project, afterValues, {
+      name: 'name',
+      description: 'description',
+      status: 'status',
+      responsible_person: 'owner',
+      company: 'company',
+      department: 'department',
+      sub_department: 'sub-department',
+    });
+    if (changeSummary) {
+      await logAudit({
+        actor: req.user,
+        action: 'updated',
+        entityType: 'project',
+        entityId: Number(req.params.id),
+        entityName: afterValues.name,
+        details: changeSummary,
+      });
+    }
+
     res.json(
       stripPlanLock(
         await get(`SELECT projects.*, ${CURRENT_ROLLOUT_DATE_SUBQUERY} FROM projects WHERE id = ?`, req.params.id)
@@ -374,6 +413,13 @@ router.delete('/:id', canEdit, async (req, res, next) => {
       return res.status(404).json({ error: 'project not found' });
     }
     await run('DELETE FROM projects WHERE id = ?', req.params.id);
+    await logAudit({
+      actor: req.user,
+      action: 'deleted',
+      entityType: 'project',
+      entityId: project.id,
+      entityName: project.name,
+    });
     res.status(204).end();
   } catch (err) {
     next(err);
@@ -390,7 +436,7 @@ router.patch('/:id/lock', async (req, res, next) => {
     if (!req.user.is_master) {
       return res.status(403).json({ error: 'only the master account can lock or unlock a project' });
     }
-    const project = await get('SELECT id FROM projects WHERE id = ?', req.params.id);
+    const project = await get('SELECT id, name FROM projects WHERE id = ?', req.params.id);
     if (!project) return res.status(404).json({ error: 'project not found' });
 
     const { password } = req.body;
@@ -403,9 +449,25 @@ router.patch('/:id/lock', async (req, res, next) => {
         bcrypt.hashSync(password, 10),
         req.params.id
       );
+      await logAudit({
+        actor: req.user,
+        action: 'updated',
+        entityType: 'project',
+        entityId: project.id,
+        entityName: project.name,
+        details: 'locked plan documents with a password',
+      });
       return res.json({ plan_locked: true });
     }
     await run('UPDATE projects SET plan_lock_hash = NULL WHERE id = ?', req.params.id);
+    await logAudit({
+      actor: req.user,
+      action: 'updated',
+      entityType: 'project',
+      entityId: project.id,
+      entityName: project.name,
+      details: 'removed the plan documents password lock',
+    });
     res.json({ plan_locked: false });
   } catch (err) {
     next(err);
@@ -661,12 +723,20 @@ router.delete('/:id/plans/:planId', superAdminOnly, async (req, res, next) => {
       return res.status(404).json({ error: 'project not found' });
     }
     const plan = await get(
-      'SELECT id FROM project_plans WHERE id = ? AND project_id = ?',
+      'SELECT id, filename FROM project_plans WHERE id = ? AND project_id = ?',
       req.params.planId,
       req.params.id
     );
     if (!plan) return res.status(404).json({ error: 'plan not found' });
     await run('DELETE FROM project_plans WHERE id = ?', req.params.planId);
+    await logAudit({
+      actor: req.user,
+      action: 'deleted',
+      entityType: 'plan document',
+      entityId: plan.id,
+      entityName: plan.filename,
+      details: `from project "${project.name}"`,
+    });
     res.status(204).end();
   } catch (err) {
     next(err);

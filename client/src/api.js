@@ -107,8 +107,11 @@ export const api = {
   getMe: () => request('/auth/me'),
   changePassword: (currentPassword, newPassword) =>
     request('/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }),
-  setSecurityQuestion: (question, answer) =>
-    request('/auth/security-question', { method: 'POST', body: JSON.stringify({ question, answer }) }),
+  setSecurityQuestion: (currentPassword, question, answer) =>
+    request('/auth/security-question', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, question, answer }),
+    }),
   getSecurityQuestion: (email) =>
     request('/auth/forgot-password/question', { method: 'POST', body: JSON.stringify({ email }) }),
   resetWithSecurityAnswer: (email, answer, newPassword) =>
@@ -140,4 +143,6 @@ export const api = {
     request(`/companies/${companyId}/departments/${deptId}`, { method: 'DELETE' }),
 
   chat: (messages) => request('/chat', { method: 'POST', body: JSON.stringify({ messages }) }),
+
+  getAuditLog: () => request('/audit-log'),
 };

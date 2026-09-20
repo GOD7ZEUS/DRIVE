@@ -131,6 +131,18 @@ await db.executeMultiple(`
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(department_id, name)
   );
+
+  CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor_user_id INTEGER REFERENCES users(id),
+    actor_name TEXT NOT NULL,
+    action TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id INTEGER,
+    entity_name TEXT,
+    details TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
 
 async function ensureColumn(table, column, definition) {
@@ -253,6 +265,46 @@ export async function getOrCreateSubDepartment(departmentId, name) {
     trimmed
   );
   return get('SELECT * FROM sub_departments WHERE id = ?', result.lastInsertRowid);
+}
+
+// A record of every delete and meaningful edit across the app — visible
+// only to the master account (see routes/auditLog.js). Logged best-effort:
+// a logging failure never blocks the actual action it's describing.
+export async function logAudit({ actor, action, entityType, entityId, entityName, details }) {
+  try {
+    await run(
+      `INSERT INTO audit_log (actor_user_id, actor_name, action, entity_type, entity_id, entity_name, details)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      actor?.id ?? null,
+      displayName(actor) || 'unknown',
+      action,
+      entityType,
+      entityId ?? null,
+      entityName ?? null,
+      details ?? null
+    );
+  } catch (err) {
+    console.error('failed to write audit log entry', err);
+  }
+}
+
+// Compares a fixed set of fields between the row before and after an update
+// and renders a short human-readable summary of what changed, e.g.
+// "status: planning → active; description updated". Long text fields are
+// reported as changed rather than diffed in full.
+export function describeChanges(before, after, fieldLabels) {
+  const parts = [];
+  for (const [field, label] of Object.entries(fieldLabels)) {
+    const oldVal = before?.[field] ?? null;
+    const newVal = after?.[field] ?? null;
+    if (oldVal === newVal) continue;
+    if ((typeof oldVal === 'string' && oldVal.length > 40) || (typeof newVal === 'string' && newVal.length > 40)) {
+      parts.push(`${label} updated`);
+    } else {
+      parts.push(`${label}: ${oldVal ?? '—'} → ${newVal ?? '—'}`);
+    }
+  }
+  return parts.join('; ');
 }
 
 const superAdminCount = (await get("SELECT COUNT(*) as count FROM users WHERE role = 'super_admin'"))

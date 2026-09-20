@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { get, run } from '../db.js';
+import { get, run, logAudit, describeChanges } from '../db.js';
 import { requireRole, matchesScope, blockedByPrivacy } from '../middleware/auth.js';
 
 const router = Router();
@@ -49,6 +49,27 @@ router.patch('/:id', canEdit, async (req, res, next) => {
       req.params.id
     );
 
+    const afterValues = {
+      title: title !== undefined ? title : milestone.title,
+      due_date: due_date !== undefined ? due_date : milestone.due_date,
+      status: status !== undefined ? status : milestone.status,
+    };
+    const changeSummary = describeChanges(milestone, afterValues, {
+      title: 'title',
+      due_date: 'due date',
+      status: 'status',
+    });
+    if (changeSummary) {
+      await logAudit({
+        actor: req.user,
+        action: 'updated',
+        entityType: 'milestone',
+        entityId: milestone.id,
+        entityName: afterValues.title,
+        details: changeSummary,
+      });
+    }
+
     res.json(await get('SELECT * FROM milestones WHERE id = ?', req.params.id));
   } catch (err) {
     next(err);
@@ -63,6 +84,13 @@ router.delete('/:id', superAdminOnly, async (req, res, next) => {
     // left referencing a milestone that no longer exists.
     await run('UPDATE tasks SET milestone_id = NULL WHERE milestone_id = ?', req.params.id);
     await run('DELETE FROM milestones WHERE id = ?', req.params.id);
+    await logAudit({
+      actor: req.user,
+      action: 'deleted',
+      entityType: 'milestone',
+      entityId: milestone.id,
+      entityName: milestone.title,
+    });
     res.status(204).end();
   } catch (err) {
     next(err);

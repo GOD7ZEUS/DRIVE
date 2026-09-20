@@ -10,6 +10,7 @@ const SUGGESTIONS = [
 ];
 
 export default function SecurityQuestionModal({ dismissible = true, onClose, onSaved }) {
+  const [currentPassword, setCurrentPassword] = useState('');
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
   const [error, setError] = useState('');
@@ -20,7 +21,7 @@ export default function SecurityQuestionModal({ dismissible = true, onClose, onS
     setError('');
     setSubmitting(true);
     try {
-      await api.setSecurityQuestion(question, answer);
+      await api.setSecurityQuestion(currentPassword, question, answer);
       onSaved?.();
       onClose?.();
     } catch (err) {
@@ -45,6 +46,17 @@ export default function SecurityQuestionModal({ dismissible = true, onClose, onS
           Used to verify it's really you if you ever need to reset your password without your current one.
         </p>
         <label>
+          Current Password
+          <br />
+          <input
+            type="password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            required
+            autoFocus
+          />
+        </label>
+        <label>
           Question
           <br />
           <input
@@ -52,7 +64,6 @@ export default function SecurityQuestionModal({ dismissible = true, onClose, onS
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             required
-            autoFocus
           />
           <datalist id="security-question-suggestions">
             {SUGGESTIONS.map((s) => (

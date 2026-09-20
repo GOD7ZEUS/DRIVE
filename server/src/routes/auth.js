@@ -168,12 +168,27 @@ router.post('/change-password', requireAuth, authLimiter, async (req, res, next)
   }
 });
 
-router.post('/security-question', requireAuth, async (req, res, next) => {
+// Setting or changing the security question requires re-entering the
+// current login password first — the same protection change-password
+// already has. Without this, anyone with a moment of access to an
+// unlocked, logged-in session could silently swap in a security question
+// they control and use it later to take over the account without ever
+// knowing the real password.
+router.post('/security-question', requireAuth, authLimiter, async (req, res, next) => {
   try {
-    const { question, answer } = req.body;
+    const { currentPassword, question, answer } = req.body;
+    if (!currentPassword) {
+      return res.status(400).json({ error: 'currentPassword is required' });
+    }
     if (!question || !question.trim() || !answer || !answer.trim()) {
       return res.status(400).json({ error: 'question and answer are required' });
     }
+
+    const user = await get('SELECT * FROM users WHERE id = ?', req.user.id);
+    if (!bcrypt.compareSync(currentPassword, user.password_hash)) {
+      return res.status(401).json({ error: 'current password is incorrect' });
+    }
+
     const answerHash = bcrypt.hashSync(answer.trim().toLowerCase(), 10);
     await run(
       'UPDATE users SET security_question = ?, security_answer_hash = ? WHERE id = ?',
