@@ -29,7 +29,8 @@ export default function ActivityLog() {
     <div>
       <h1>Activity Log</h1>
       <p className="muted" style={{ marginBottom: 16 }}>
-        Every delete and edit across Drive — visible only to the master account.
+        Every delete and edit across Drive — visible only to the master account. Entries are kept for 30 days,
+        then removed automatically.
       </p>
 
       {error && <p className="error">{error}</p>}
