@@ -190,11 +190,6 @@ export default function Companies() {
           </button>
         )}
       </div>
-      <p className="muted" style={{ marginBottom: 16 }}>
-        {isProAdmin
-          ? 'Your company and its departments — add departments here as needed.'
-          : 'Add companies and departments here first — Projects and Users then just pick from what already exists.'}
-      </p>
 
       {!isProAdmin && showCompanyForm && (
         <form className="panel inline-form" onSubmit={handleAddCompany} style={{ marginBottom: 20 }}>
