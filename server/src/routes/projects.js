@@ -282,6 +282,14 @@ router.patch('/:id', canEdit, async (req, res, next) => {
     if (description !== undefined && !['super_admin', 'pro_admin'].includes(req.user.role)) {
       return res.status(403).json({ error: 'only Super Admin can edit the project description' });
     }
+    // Renaming a project is master-only — it's the identifier everyone else
+    // refers to it by, so nobody below master can change it out from under them.
+    if (name !== undefined && !req.user.is_master) {
+      return res.status(403).json({ error: 'only the master account can edit the project name' });
+    }
+    if (name !== undefined && !name.trim()) {
+      return res.status(400).json({ error: 'name is required' });
+    }
 
     let companyRow = { id: project.company_id, name: project.company };
     let departmentRow = { id: project.department_id, name: project.department };
@@ -352,7 +360,7 @@ router.patch('/:id', canEdit, async (req, res, next) => {
         company = ?, department = ?, company_id = ?, department_id = ?, sub_department = ?, sub_department_id = ?,
         completed_at = ?, updated_at = datetime('now')
        WHERE id = ?`,
-      name !== undefined ? name : project.name,
+      name !== undefined ? name.trim() : project.name,
       description !== undefined ? description : project.description,
       status !== undefined ? status : project.status,
       responsiblePersonText,
@@ -368,7 +376,7 @@ router.patch('/:id', canEdit, async (req, res, next) => {
     );
 
     const afterValues = {
-      name: name !== undefined ? name : project.name,
+      name: name !== undefined ? name.trim() : project.name,
       description: description !== undefined ? description : project.description,
       status: status !== undefined ? status : project.status,
       responsible_person: responsiblePersonText,

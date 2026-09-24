@@ -69,6 +69,11 @@ export default function ProjectDetail() {
   const [descriptionError, setDescriptionError] = useState('');
   const [savingDescription, setSavingDescription] = useState(false);
 
+  const [editingName, setEditingName] = useState(false);
+  const [editNameText, setEditNameText] = useState('');
+  const [nameError, setNameError] = useState('');
+  const [savingName, setSavingName] = useState(false);
+
   const [showMilestoneForm, setShowMilestoneForm] = useState(false);
   const [milestoneTitle, setMilestoneTitle] = useState('');
   const [milestoneDue, setMilestoneDue] = useState('');
@@ -164,6 +169,27 @@ export default function ProjectDetail() {
       setDescriptionError(err.message);
     } finally {
       setSavingDescription(false);
+    }
+  }
+
+  function startEditName() {
+    setEditingName(true);
+    setEditNameText(project.name || '');
+    setNameError('');
+  }
+
+  async function handleSaveName(e) {
+    e.preventDefault();
+    setSavingName(true);
+    setNameError('');
+    try {
+      await api.updateProject(id, { name: editNameText });
+      setEditingName(false);
+      load();
+    } catch (err) {
+      setNameError(err.message);
+    } finally {
+      setSavingName(false);
     }
   }
 
@@ -352,7 +378,35 @@ export default function ProjectDetail() {
 
       <div className="row-between">
         <div>
-          <h1>{project.name}</h1>
+          {editingName ? (
+            <form className="inline-form" onSubmit={handleSaveName}>
+              <input
+                type="text"
+                value={editNameText}
+                onChange={(e) => setEditNameText(e.target.value)}
+                autoFocus
+                required
+              />
+              <div className="row">
+                <button type="submit" className="primary" disabled={savingName}>
+                  Save
+                </button>
+                <button type="button" onClick={() => setEditingName(false)}>
+                  Cancel
+                </button>
+              </div>
+              {nameError && <p className="error">{nameError}</p>}
+            </form>
+          ) : (
+            <h1>
+              {project.name}
+              {user.is_master && (
+                <button type="button" style={{ marginLeft: 10 }} onClick={startEditName}>
+                  Edit
+                </button>
+              )}
+            </h1>
+          )}
           {rolloutDates.length > 0 && <h1>Rollout Date - {formatDate(rolloutDates[0].rollout_date)}</h1>}
         </div>
         <div className="row">
