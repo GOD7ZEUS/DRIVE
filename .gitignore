@@ -5,3 +5,5 @@ tracker.db
 *.log
 .DS_Store
 desktop/dist
+*.apk
+*.aab

@@ -7,7 +7,7 @@ A multi-tenant construction project/task tracker, live at https://drive-e0o3.onr
 - Owner/user: Niladri Ghosal, `nghosal@royalconstruct.com`, Royal Infraconstru Limited (also runs SATTAVA Power Manufacturers LLP and a private client company through the same instance).
 - Master account: `niladripro7@gmail.com` — the one account with `is_master=1`, sitting above even Super Admin.
 - Repo: `https://github.com/GOD7ZEUS/DRIVE.git`, branch `main`.
-- Hosting: Render (free tier), Docker-based deploy, auto-deploys on push to `main`. A desktop Electron build also exists under `desktop/`.
+- Hosting: Render (free tier), Docker-based deploy, auto-deploys on push to `main`. A desktop Electron build also exists under `desktop/`, and an Android APK wrapper under `mobile/` (Capacitor, just loads the live production URL in a native shell — no separate deploy, see README's "Run (Android app)").
 
 ## Tech stack
 

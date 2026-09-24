@@ -58,6 +58,22 @@ This writes two things to `desktop/dist/`:
 
 Each user's data lives in their own per-machine location (`%APPDATA%/drive-desktop/drive.db`), and the very first launch walks them through creating their own Super Admin account.
 
+## Run (Android app)
+
+`mobile/` is a thin Capacitor wrapper — no bundled server or client, it just opens `https://drive-e0o3.onrender.com` (set in `mobile/capacitor.config.json`) full-screen in a native shell, so it always reflects whatever is live in production. Login/data/permissions all work exactly as on the web app; there's nothing extra to deploy or keep in sync.
+
+Building the APK needs a JDK (21+) and the Android SDK (platform 34+, build-tools) on `PATH`/`JAVA_HOME`/`ANDROID_HOME` — Android Studio provides all three, or install them standalone. Then:
+
+```
+cd mobile
+npm install
+npx cap sync android
+cd android
+./gradlew assembleDebug
+```
+
+The APK lands at `mobile/android/app/build/outputs/apk/debug/app-debug.apk` — sideload it directly (enable "install from unknown sources"), no Play Store needed. To point it at a different backend (e.g. a staging URL), change `server.url` in `mobile/capacitor.config.json` and re-run `npx cap sync android` before rebuilding.
+
 ## Roles & company/department scoping
 
 - **Super Admin** — the seeded account; can create/delete Admin and View accounts from the "Users" page, and sees every project across every company. Cannot be deleted or edited via the API.

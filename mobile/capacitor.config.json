@@ -1,0 +1,12 @@
+{
+  "appId": "com.royalconstruct.drive",
+  "appName": "Drive",
+  "webDir": "www",
+  "server": {
+    "url": "https://drive-e0o3.onrender.com",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}

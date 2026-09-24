@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Drive</string>
+    <string name="title_activity_main">Drive</string>
+    <string name="package_name">com.royalconstruct.drive</string>
+    <string name="custom_url_scheme">com.royalconstruct.drive</string>
+</resources>
