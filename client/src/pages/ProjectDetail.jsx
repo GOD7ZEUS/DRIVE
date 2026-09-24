@@ -398,18 +398,16 @@ export default function ProjectDetail() {
               {nameError && <p className="error">{nameError}</p>}
             </form>
           ) : (
-            <h1>
-              {project.name}
-              {user.is_master && (
-                <button type="button" style={{ marginLeft: 10 }} onClick={startEditName}>
-                  Edit
-                </button>
-              )}
-            </h1>
+            <h1>{project.name}</h1>
           )}
           {rolloutDates.length > 0 && <h1>Rollout Date - {formatDate(rolloutDates[0].rollout_date)}</h1>}
         </div>
         <div className="row">
+          {user.is_master && !editingName && (
+            <button type="button" onClick={startEditName}>
+              Edit
+            </button>
+          )}
           <button onClick={() => setShowDetails((s) => !s)}>
             {showDetails ? 'Hide Details' : canEdit ? 'Edit' : 'View Details'}
           </button>
