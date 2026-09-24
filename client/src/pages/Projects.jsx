@@ -14,8 +14,15 @@ export default function Projects() {
   const { user } = useAuth();
   const isSuperAdmin = user.role === 'super_admin';
   const isProAdmin = user.role === 'pro_admin';
+  // Gates the New Project form's own company/department fields — View never
+  // sees that form at all (canEdit below), so this stays narrow on purpose.
   const canPickCompany = isSuperAdmin || isProAdmin;
   const canEdit = user.role !== 'view';
+  // Company/Department/Sub Department info, the Company filter, and the User
+  // filter are all read-only — nothing here lets a view-only account change
+  // anything, so View gets the same unscoped overview it already has on the
+  // dashboard, not just a bare project list.
+  const canSeeCompanyInfo = canPickCompany || user.role === 'view';
   const [searchParams, setSearchParams] = useSearchParams();
   const [projects, setProjects] = useState(null);
   const [error, setError] = useState('');
@@ -63,14 +70,14 @@ export default function Projects() {
 
   const visibleProjects = useMemo(() => {
     if (!projects) return [];
-    if (!canPickCompany) return projects;
+    if (!canSeeCompanyInfo) return projects;
     return projects.filter((p) => {
       if (companyFilter !== 'all' && String(p.company_id) !== companyFilter) return false;
       if (departmentFilter !== 'all' && String(p.department_id) !== departmentFilter) return false;
       if (userFilter !== 'all' && String(p.responsible_user_id) !== userFilter) return false;
       return true;
     });
-  }, [projects, companyFilter, departmentFilter, userFilter, canPickCompany]);
+  }, [projects, companyFilter, departmentFilter, userFilter, canSeeCompanyInfo]);
 
   function handleCompanyFilterChange(value) {
     setCompanyFilter(value);
@@ -143,7 +150,7 @@ export default function Projects() {
       <div className="row-between">
         <h1>Projects</h1>
         <div className="row">
-          {canPickCompany && projects && projects.length > 0 && (
+          {canSeeCompanyInfo && projects && projects.length > 0 && (
             <select value={companyFilter} onChange={(e) => handleCompanyFilterChange(e.target.value)}>
               <option value="all">All companies</option>
               {companies.map(([id, name]) => (
@@ -153,7 +160,7 @@ export default function Projects() {
               ))}
             </select>
           )}
-          {canPickCompany && assignableUsers.length > 0 && (
+          {canSeeCompanyInfo && assignableUsers.length > 0 && (
             <select value={userFilter} onChange={(e) => handleUserFilterChange(e.target.value)}>
               <option value="all">All users</option>
               {assignableUsers.map((u) => (
@@ -171,7 +178,7 @@ export default function Projects() {
         </div>
       </div>
 
-      {canPickCompany && departmentFilter !== 'all' && filteredDepartmentName && (
+      {canSeeCompanyInfo && departmentFilter !== 'all' && filteredDepartmentName && (
         <p className="muted" style={{ marginBottom: 12 }}>
           Filtered to department <strong>{filteredDepartmentName}</strong> ·{' '}
           <a href="#" onClick={(e) => { e.preventDefault(); clearFilter(); }}>
@@ -285,7 +292,7 @@ export default function Projects() {
           <Link key={p.id} to={`/projects/${p.id}`} className="list-item project-row">
             <div className="list-item-info">
               <div className="title">{p.name}</div>
-              {canPickCompany && (
+              {canSeeCompanyInfo && (
                 <div className="muted project-meta">
                   {p.company} <span className="key-tag">Co.{p.company_id}</span> / {p.department}{' '}
                   <span className="key-tag">Dept.{p.department_id}</span>
