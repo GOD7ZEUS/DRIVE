@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { get, all, run, displayName, logAudit, describeChanges } from '../db.js';
 import { requireRole, matchesScope, scopeClause, blockedByPrivacy } from '../middleware/auth.js';
 import { sendTaskAssignedEmail } from '../notifications.js';
@@ -6,6 +7,23 @@ import { sendTaskAssignedEmail } from '../notifications.js';
 const router = Router();
 const canEdit = requireRole('super_admin', 'pro_admin', 'admin');
 const TASK_STATUSES = ['todo', 'in_progress', 'done'];
+
+// Task attachments are small BLOBs in the same database as everything else,
+// same reasoning as project plan documents — Render's free-tier disk is
+// wiped on every redeploy. Capped much smaller than a plan document since a
+// task can carry any number of them (no limit on count, just per-file size).
+const MAX_ATTACHMENT_SIZE = 500 * 1024;
+const ALLOWED_ATTACHMENT_MIME_TYPES = new Set(['application/pdf', 'image/png', 'image/jpeg']);
+const attachmentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_ATTACHMENT_SIZE },
+  fileFilter: (req, file, cb) => {
+    if (!ALLOWED_ATTACHMENT_MIME_TYPES.has(file.mimetype)) {
+      return cb(new Error('only PDF, PNG, or JPG files are allowed'));
+    }
+    cb(null, true);
+  },
+});
 
 async function loadScopedTask(req) {
   const task = await get('SELECT * FROM tasks WHERE id = ?', req.params.id);
@@ -188,6 +206,96 @@ router.post('/:id/comments', canEdit, async (req, res, next) => {
       body.trim()
     );
     res.status(201).json(await get('SELECT * FROM comments WHERE id = ?', result.lastInsertRowid));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/:id/attachments', async (req, res, next) => {
+  try {
+    const task = await loadScopedTask(req);
+    if (!task) return res.status(404).json({ error: 'task not found' });
+    const attachments = await all(
+      `SELECT id, filename, mime_type, size_bytes, uploaded_by, created_at
+       FROM task_attachments WHERE task_id = ? ORDER BY id DESC`,
+      req.params.id
+    );
+    res.json(attachments);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/:id/attachments', canEdit, (req, res, next) => {
+  attachmentUpload.single('file')(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    next();
+  });
+}, async (req, res, next) => {
+  try {
+    const task = await loadScopedTask(req);
+    if (!task) return res.status(404).json({ error: 'task not found' });
+    if (!req.file) return res.status(400).json({ error: 'file is required' });
+
+    const result = await run(
+      `INSERT INTO task_attachments (task_id, filename, mime_type, size_bytes, data, uploaded_by)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      req.params.id,
+      req.file.originalname,
+      req.file.mimetype,
+      req.file.size,
+      req.file.buffer,
+      displayName(req.user)
+    );
+    const attachment = await get(
+      `SELECT id, filename, mime_type, size_bytes, uploaded_by, created_at
+       FROM task_attachments WHERE id = ?`,
+      result.lastInsertRowid
+    );
+    res.status(201).json(attachment);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/:id/attachments/:attachmentId/download', async (req, res, next) => {
+  try {
+    const task = await loadScopedTask(req);
+    if (!task) return res.status(404).json({ error: 'task not found' });
+    const attachment = await get(
+      'SELECT * FROM task_attachments WHERE id = ? AND task_id = ?',
+      req.params.attachmentId,
+      req.params.id
+    );
+    if (!attachment) return res.status(404).json({ error: 'attachment not found' });
+    res.set('Content-Type', attachment.mime_type);
+    res.set('Content-Disposition', `inline; filename="${encodeURIComponent(attachment.filename)}"`);
+    res.send(Buffer.from(attachment.data));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/:id/attachments/:attachmentId', canEdit, async (req, res, next) => {
+  try {
+    const task = await loadScopedTask(req);
+    if (!task) return res.status(404).json({ error: 'task not found' });
+    const attachment = await get(
+      'SELECT id, filename FROM task_attachments WHERE id = ? AND task_id = ?',
+      req.params.attachmentId,
+      req.params.id
+    );
+    if (!attachment) return res.status(404).json({ error: 'attachment not found' });
+    await run('DELETE FROM task_attachments WHERE id = ?', req.params.attachmentId);
+    await logAudit({
+      actor: req.user,
+      action: 'deleted',
+      entityType: 'task attachment',
+      entityId: attachment.id,
+      entityName: attachment.filename,
+      details: `from task "${task.title}"`,
+    });
+    res.status(204).end();
   } catch (err) {
     next(err);
   }

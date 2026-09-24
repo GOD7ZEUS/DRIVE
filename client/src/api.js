@@ -49,6 +49,28 @@ export const api = {
   createComment: (taskId, data) =>
     request(`/tasks/${taskId}/comments`, { method: 'POST', body: JSON.stringify(data) }),
 
+  getTaskAttachments: (taskId) => request(`/tasks/${taskId}/attachments`),
+  uploadTaskAttachment: async (taskId, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${BASE_URL}/tasks/${taskId}/attachments`, {
+      method: 'POST',
+      credentials: 'include',
+      body: formData,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const error = new Error(body.error || `Request failed: ${res.status}`);
+      error.status = res.status;
+      throw error;
+    }
+    return res.json();
+  },
+  deleteTaskAttachment: (taskId, attachmentId) =>
+    request(`/tasks/${taskId}/attachments/${attachmentId}`, { method: 'DELETE' }),
+  getTaskAttachmentDownloadUrl: (taskId, attachmentId) =>
+    `${BASE_URL}/tasks/${taskId}/attachments/${attachmentId}/download`,
+
   getRolloutDates: (projectId) => request(`/projects/${projectId}/rollout-dates`),
   addRolloutDate: (projectId, rollout_date) =>
     request(`/projects/${projectId}/rollout-dates`, { method: 'POST', body: JSON.stringify({ rollout_date }) }),

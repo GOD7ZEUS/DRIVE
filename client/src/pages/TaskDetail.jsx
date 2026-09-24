@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
@@ -8,6 +8,12 @@ import { formatDate, formatDateTime } from '../dateFormat.js';
 
 const TASK_STATUSES = ['todo', 'in_progress', 'done'];
 
+function formatFileSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export default function TaskDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -16,7 +22,12 @@ export default function TaskDetail() {
   const [task, setTask] = useState(null);
   const [comments, setComments] = useState([]);
   const [assignableUsers, setAssignableUsers] = useState([]);
+  const [attachments, setAttachments] = useState([]);
   const [error, setError] = useState('');
+
+  const attachmentFileInputRef = useRef(null);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [attachmentError, setAttachmentError] = useState('');
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -28,10 +39,11 @@ export default function TaskDetail() {
   const [commentBody, setCommentBody] = useState('');
 
   function load() {
-    Promise.all([api.getTask(id), api.getComments(id)])
-      .then(([t, c]) => {
+    Promise.all([api.getTask(id), api.getComments(id), api.getTaskAttachments(id)])
+      .then(([t, c, a]) => {
         setTask(t);
         setComments(c);
+        setAttachments(a);
         setTitle(t.title);
         setDescription(t.description || '');
         setAssigneeUserId(t.assignee_user_id || '');
@@ -71,6 +83,28 @@ export default function TaskDetail() {
     if (!commentBody.trim()) return;
     await api.createComment(id, { author: commentAuthor, body: commentBody });
     setCommentBody('');
+    load();
+  }
+
+  async function handleAttachmentFileSelected(e) {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    setAttachmentError('');
+    setUploadingAttachment(true);
+    try {
+      await api.uploadTaskAttachment(id, file);
+      load();
+    } catch (err) {
+      setAttachmentError(err.message);
+    } finally {
+      setUploadingAttachment(false);
+    }
+  }
+
+  async function handleDeleteAttachment(a) {
+    if (!confirm(`Delete file "${a.filename}"? This cannot be undone.`)) return;
+    await api.deleteTaskAttachment(id, a.id);
     load();
   }
 
@@ -149,6 +183,59 @@ export default function TaskDetail() {
           </div>
         </form>
       )}
+
+      <div className="section">
+        <div className="row-between">
+          <h2>Files</h2>
+          {canEdit && (
+            <>
+              <input
+                ref={attachmentFileInputRef}
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg"
+                style={{ display: 'none' }}
+                onChange={handleAttachmentFileSelected}
+              />
+              <button onClick={() => attachmentFileInputRef.current?.click()} disabled={uploadingAttachment}>
+                {uploadingAttachment ? 'Uploading…' : 'Upload File'}
+              </button>
+            </>
+          )}
+        </div>
+
+        <p className="muted" style={{ marginBottom: 12 }}>
+          PDF, PNG, or JPG, up to 500 KB each. Attach as many as the task needs.
+        </p>
+        {attachmentError && <p className="error">{attachmentError}</p>}
+
+        {attachments.length === 0 ? (
+          <p className="muted">No files uploaded yet.</p>
+        ) : (
+          <div className="list">
+            {attachments.map((a) => (
+              <div key={a.id} className="list-item">
+                <div>
+                  <div className="title">{a.filename}</div>
+                  <div className="muted">
+                    {formatFileSize(a.size_bytes)}
+                    {a.uploaded_by ? ` · Uploaded by ${a.uploaded_by}` : ''} · {formatDateTime(a.created_at)}
+                  </div>
+                </div>
+                <div className="row">
+                  <a href={api.getTaskAttachmentDownloadUrl(id, a.id)} target="_blank" rel="noreferrer">
+                    <button type="button">View</button>
+                  </a>
+                  {canEdit && (
+                    <button className="danger" onClick={() => handleDeleteAttachment(a)}>
+                      Delete
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="section">
         <h2>Activity & Comments</h2>
