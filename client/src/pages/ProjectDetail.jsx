@@ -378,36 +378,10 @@ export default function ProjectDetail() {
 
       <div className="row-between">
         <div>
-          {editingName ? (
-            <form className="inline-form" onSubmit={handleSaveName}>
-              <input
-                type="text"
-                value={editNameText}
-                onChange={(e) => setEditNameText(e.target.value)}
-                autoFocus
-                required
-              />
-              <div className="row">
-                <button type="submit" className="primary" disabled={savingName}>
-                  Save
-                </button>
-                <button type="button" onClick={() => setEditingName(false)}>
-                  Cancel
-                </button>
-              </div>
-              {nameError && <p className="error">{nameError}</p>}
-            </form>
-          ) : (
-            <h1>{project.name}</h1>
-          )}
+          <h1>{project.name}</h1>
           {rolloutDates.length > 0 && <h1>Rollout Date - {formatDate(rolloutDates[0].rollout_date)}</h1>}
         </div>
         <div className="row">
-          {user.is_master && !editingName && (
-            <button type="button" onClick={startEditName}>
-              Edit
-            </button>
-          )}
           <button onClick={() => setShowDetails((s) => !s)}>
             {showDetails ? 'Hide Details' : canEdit ? 'Edit' : 'View Details'}
           </button>
@@ -446,6 +420,40 @@ export default function ProjectDetail() {
       <>
       <table className="detail-table">
         <tbody>
+          <tr>
+            <th>Project Name</th>
+            <td>
+              {editingName ? (
+                <form className="inline-form" onSubmit={handleSaveName}>
+                  <input
+                    type="text"
+                    value={editNameText}
+                    onChange={(e) => setEditNameText(e.target.value)}
+                    autoFocus
+                    required
+                  />
+                  <div className="row">
+                    <button type="submit" className="primary" disabled={savingName}>
+                      Save
+                    </button>
+                    <button type="button" onClick={() => setEditingName(false)}>
+                      Cancel
+                    </button>
+                  </div>
+                  {nameError && <p className="error">{nameError}</p>}
+                </form>
+              ) : (
+                <>
+                  {project.name}
+                  {user.is_master && (
+                    <button type="button" style={{ marginLeft: 10 }} onClick={startEditName}>
+                      Edit
+                    </button>
+                  )}
+                </>
+              )}
+            </td>
+          </tr>
           <tr>
             <th>Status</th>
             <td>
