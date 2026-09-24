@@ -62,12 +62,16 @@ export function requireRole(...roles) {
   };
 }
 
-// Super admin sees everything; a Pro Admin is scoped to every department
-// within their one assigned company (departmentId left null, meaning "any");
-// everyone else is scoped to their own company+department (compared by
-// primary key, not by name, so casing/typos can't split or merge scopes).
+// Super admin sees everything; View is also unscoped — a read-only overview
+// of the whole project across every company/department, not just their own
+// (the whole point of the role is to look, never to edit, so there's no
+// isolation reason to fence their visibility the way Admin's is). A Pro
+// Admin is scoped to every department within their one assigned company
+// (departmentId left null, meaning "any"); Admin is scoped to their own
+// company+department (compared by primary key, not by name, so casing/typos
+// can't split or merge scopes).
 export function scopeClause(req) {
-  if (req.user.role === 'super_admin') return null;
+  if (req.user.role === 'super_admin' || req.user.role === 'view') return null;
   if (req.user.role === 'pro_admin') return { companyId: req.user.company_id, departmentId: null };
   return { companyId: req.user.company_id, departmentId: req.user.department_id };
 }

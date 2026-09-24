@@ -22,7 +22,7 @@ A multi-tenant construction project/task tracker, live at https://drive-e0o3.onr
 2. **Super Admin** — sees everything except companies Master has marked private (invisible in every listing and 404s on direct access — never a distinguishable 403).
 3. **Pro Admin** — Master-created only, assigned to exactly one company. Has full Super-Admin-equivalent power (departments, users, projects, milestones, tasks, plans, rollout dates) but confined to that one company. Cannot create companies or promote anyone to `super_admin`/`pro_admin`. Any admin/view user a Pro Admin creates is always visible only to that Pro Admin + Master, regardless of whether the company is private.
 4. **Admin** — locked to one company+department, can edit most things there but not description/department-moves (Super Admin/Pro Admin tier only).
-5. **View** — read-only within their company+department.
+5. **View** — read-only, but unscoped: sees every company/department's projects/tasks/dashboard (same visibility as a regular Super Admin, i.e. every company except ones Master marked private), just with zero write access anywhere.
 
 ## Data model
 

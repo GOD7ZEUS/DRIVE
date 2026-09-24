@@ -62,9 +62,9 @@ Each user's data lives in their own per-machine location (`%APPDATA%/drive-deskt
 
 - **Super Admin** — the seeded account; can create/delete Admin and View accounts from the "Users" page, and sees every project across every company. Cannot be deleted or edited via the API.
 - **Admin** — full read/write on projects, milestones, tasks, and comments, scoped to their own Company + Department. Every project they create is automatically tagged with their account's Company/Department. No access to user management.
-- **View** — read-only, scoped to their own Company + Department; all create/edit/delete controls are hidden, and the API rejects mutating requests from this role.
+- **View** — read-only, but unscoped: sees every project across every company/department (not just their own), with all create/edit/delete controls hidden and the API rejecting mutating requests from this role.
 
-When a Super Admin creates an Admin or View account, they set that account's **Company** and **Department**. From then on that account only ever sees data tagged with the same Company + Department — effectively each department gets its own dedicated view without needing separate pages. Cross-tenant record access returns `404`, not `403`, so one company's data doesn't leak the existence of another's.
+When a Super Admin creates an Admin account, they set that account's **Company** and **Department** — from then on it only ever sees data tagged with the same Company + Department, effectively giving each department its own dedicated view without needing separate pages. A View account also gets a Company/Department at creation (its "home" identity), but that doesn't scope what it can see — View is a read-only overview across every company/department. Cross-tenant record access for a scoped account (Admin) returns `404`, not `403`, so one company's data doesn't leak the existence of another's.
 
 There is no public signup — accounts only exist once a Super Admin creates them from the Users page.
 
@@ -72,7 +72,7 @@ There is no public signup — accounts only exist once a Super Admin creates the
 
 Company and Department are never free-typed twice. Super Admin picks an existing one from a dropdown (populated from real `companies`/`departments` tables) or chooses "+ Add new…" to mint one — the first time a name is used it gets an auto-generated primary key, and picking it again always reuses that same key (matched case-insensitively, so "Royal Construct" and "royal construct" resolve to the same row). Departments are keyed under their company (`departments.company_id`), and all access scoping compares these ids, not the display names, so a typo can't accidentally split or merge someone's data. The ids show up in the UI as small `Co.#` / `Dept.#` tags wherever Super Admin can see them.
 
-Super Admin navigates **Companies → Departments → Projects**: the "Companies" page lists every company with department/project counts, expands to show its departments, and clicking a department jumps straight to that filtered project list. Admin/View accounts skip all of this — they only ever see their own company+department automatically.
+Super Admin navigates **Companies → Departments → Projects**: the "Companies" page lists every company with department/project counts, expands to show its departments, and clicking a department jumps straight to that filtered project list. An Admin account skips all of this — it only ever sees its own company+department automatically. View has no need for it either, since its Projects/Dashboard views are already unscoped across every company+department.
 
 ## Using it on a phone
 
