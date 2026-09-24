@@ -53,10 +53,18 @@ app.use('/api/audit-log', requireAuth, auditLogRouter);
 
 if (process.env.NODE_ENV === 'production') {
   const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');
-  app.use(express.static(clientDist));
-  app.get('*', (req, res) => {
+  // Vite's own JS/CSS bundles are content-hashed (safe to cache forever), but
+  // index.html itself references those hashes — if a client (especially the
+  // Android app, which reloads this URL every time it's reopened rather than
+  // doing a hard browser refresh) ever caches index.html itself, it could
+  // keep pointing at a bundle from before the last deploy indefinitely.
+  const sendIndexHtml = (req, res) => {
+    res.set('Cache-Control', 'no-cache');
     res.sendFile(path.join(clientDist, 'index.html'));
-  });
+  };
+  app.use(express.static(clientDist, { index: false }));
+  app.get('/', sendIndexHtml);
+  app.get('*', sendIndexHtml);
 }
 
 app.use((err, req, res, next) => {

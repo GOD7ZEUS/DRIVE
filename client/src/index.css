@@ -77,6 +77,17 @@
   box-sizing: border-box;
 }
 
+html {
+  /* Android WebView (unlike Chrome) auto-inflates font sizes it judges
+     "too small to read" — most aggressively on narrow flex/card text like
+     the project description — which blows the text up and drags the whole
+     card out to an unreadable, oversized vertical block. This is purely a
+     WebView heuristic, not a real accessibility need here (the app already
+     sets its own deliberate font sizes), so it's turned off explicitly. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
 }
