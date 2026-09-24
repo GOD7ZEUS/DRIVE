@@ -1,7 +1,14 @@
 ext {
     minSdkVersion = 24
+    // compileSdkVersion (API surface to compile against) and targetSdkVersion
+    // (runtime behavior the app opts into) are independent — the androidx
+    // dependencies below require compiling against 36, but targeting 36 at
+    // runtime enforces edge-to-edge display (content drawing under the status/
+    // nav bars) with no safe-area handling in this app's CSS, which is what
+    // was causing content to not fit the screen. Staying on target 34 avoids
+    // that opt-in while still compiling against the newer API surface.
     compileSdkVersion = 36
-    targetSdkVersion = 36
+    targetSdkVersion = 34
     androidxActivityVersion = '1.11.0'
     androidxAppCompatVersion = '1.7.1'
     androidxCoordinatorLayoutVersion = '1.3.0'
