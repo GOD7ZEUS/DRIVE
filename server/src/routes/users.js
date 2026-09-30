@@ -284,6 +284,7 @@ router.patch('/:id', async (req, res, next) => {
         entityId: user.id,
         entityName: `${afterValues.first_name} ${afterValues.last_name}`.trim() || user.email,
         details: changeSummary,
+        snapshot: { before: user },
       });
     }
 
@@ -332,6 +333,7 @@ router.delete('/:id', async (req, res, next) => {
       entityId: user.id,
       entityName: `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email,
       details: `role: ${user.role}`,
+      snapshot: { row: user },
     });
     res.status(204).end();
   } catch (err) {

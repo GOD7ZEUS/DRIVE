@@ -110,6 +110,7 @@ router.patch('/:id', async (req, res, next) => {
         entityId: company.id,
         entityName: newName,
         details: changeSummary,
+        snapshot: { before: company },
       });
     }
 
@@ -210,6 +211,7 @@ router.patch('/:id/departments/:deptId', async (req, res, next) => {
         entityId: department.id,
         entityName: name.trim(),
         details: `name: ${department.name} → ${name.trim()}`,
+        snapshot: { before: department },
       });
     }
     res.json(await get('SELECT * FROM departments WHERE id = ?', req.params.deptId));
@@ -257,6 +259,9 @@ router.delete('/:id/departments/:deptId', async (req, res, next) => {
       entityId: department.id,
       entityName: department.name,
       details: `from company "${company.name}"`,
+      // Deletion is blocked above while any project/user still references
+      // it, so there's never anything besides this one row to bring back.
+      snapshot: { row: department },
     });
     res.status(204).end();
   } catch (err) {
@@ -298,6 +303,9 @@ router.delete('/:id', async (req, res, next) => {
       entityType: 'company',
       entityId: company.id,
       entityName: company.name,
+      // Blocked above while it still has departments/projects/users, so
+      // there's never anything besides this one row to bring back.
+      snapshot: { row: company },
     });
     res.status(204).end();
   } catch (err) {

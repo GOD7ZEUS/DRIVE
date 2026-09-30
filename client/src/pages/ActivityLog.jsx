@@ -10,20 +10,43 @@ const ENTITY_LABELS = {
   company: 'Company',
   department: 'Department',
   'plan document': 'Plan Document',
+  'task attachment': 'Task File',
+  'milestone attachment': 'Milestone File',
 };
 
 const ACTION_LABELS = {
   deleted: '🗑️ Deleted',
   updated: '✏️ Edited',
+  restored: '↩️ Restored',
 };
 
 export default function ActivityLog() {
   const [entries, setEntries] = useState(null);
   const [error, setError] = useState('');
+  const [restoringId, setRestoringId] = useState(null);
+  const [restoreError, setRestoreError] = useState({});
 
-  useEffect(() => {
+  function load() {
     api.getAuditLog().then(setEntries).catch((e) => setError(e.message));
-  }, []);
+  }
+
+  useEffect(load, []);
+
+  async function handleRestore(e) {
+    if (!confirm(`Restore this ${ENTITY_LABELS[e.entity_type] || e.entity_type} to its state before this ${e.action}?`)) {
+      return;
+    }
+    setRestoringId(e.id);
+    setRestoreError((prev) => ({ ...prev, [e.id]: '' }));
+    try {
+      await api.restoreAuditLogEntry(e.id);
+      load();
+    } catch (err) {
+      setRestoreError((prev) => ({ ...prev, [e.id]: err.message }));
+    } finally {
+      setRestoringId(null);
+    }
+  }
 
   return (
     <div>
@@ -45,8 +68,16 @@ export default function ActivityLog() {
                 by {e.actor_name}
                 {e.details ? ` · ${e.details}` : ''}
               </div>
+              {restoreError[e.id] && <p className="error">{restoreError[e.id]}</p>}
             </div>
-            <div className="muted">{formatDateTime(e.created_at)}</div>
+            <div className="row" style={{ alignItems: 'center' }}>
+              {e.restorable && (
+                <button type="button" onClick={() => handleRestore(e)} disabled={restoringId === e.id}>
+                  {restoringId === e.id ? 'Restoring…' : 'Restore'}
+                </button>
+              )}
+              <div className="muted">{formatDateTime(e.created_at)}</div>
+            </div>
           </div>
         ))}
       </div>

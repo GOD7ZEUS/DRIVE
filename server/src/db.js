@@ -193,6 +193,24 @@ await ensureColumn('companies', 'is_private', 'INTEGER NOT NULL DEFAULT 0');
 await ensureColumn('projects', 'sub_department_id', 'INTEGER REFERENCES sub_departments(id)');
 await ensureColumn('projects', 'sub_department', 'TEXT');
 await ensureColumn('projects', 'plan_lock_hash', 'TEXT');
+// Holds enough of the entity's prior state (JSON) to actually undo a logged
+// edit or delete — the existing `details` column is just a human-readable
+// one-line summary, not enough to reconstruct anything from.
+await ensureColumn('audit_log', 'snapshot', 'TEXT');
+await ensureColumn('audit_log', 'restored_at', 'TEXT');
+
+await db.execute(`
+  CREATE TABLE IF NOT EXISTS milestone_attachments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    milestone_id INTEGER NOT NULL REFERENCES milestones(id) ON DELETE CASCADE,
+    filename TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    data BLOB NOT NULL,
+    uploaded_by TEXT DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
 
 // SQLite has no ALTER TABLE for CHECK constraints, so adding the pro_admin
 // role means rebuilding the users table: copy every existing column
@@ -281,18 +299,19 @@ export async function getOrCreateSubDepartment(departmentId, name) {
 // A record of every delete and meaningful edit across the app — visible
 // only to the master account (see routes/auditLog.js). Logged best-effort:
 // a logging failure never blocks the actual action it's describing.
-export async function logAudit({ actor, action, entityType, entityId, entityName, details }) {
+export async function logAudit({ actor, action, entityType, entityId, entityName, details, snapshot }) {
   try {
     await run(
-      `INSERT INTO audit_log (actor_user_id, actor_name, action, entity_type, entity_id, entity_name, details)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO audit_log (actor_user_id, actor_name, action, entity_type, entity_id, entity_name, details, snapshot)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       actor?.id ?? null,
       displayName(actor) || 'unknown',
       action,
       entityType,
       entityId ?? null,
       entityName ?? null,
-      details ?? null
+      details ?? null,
+      snapshot !== undefined ? JSON.stringify(snapshot) : null
     );
   } catch (err) {
     console.error('failed to write audit log entry', err);

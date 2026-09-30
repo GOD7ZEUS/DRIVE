@@ -401,6 +401,7 @@ router.patch('/:id', canEdit, async (req, res, next) => {
         entityId: Number(req.params.id),
         entityName: afterValues.name,
         details: changeSummary,
+        snapshot: { before: project },
       });
     }
 
@@ -420,6 +421,19 @@ router.delete('/:id', canEdit, async (req, res, next) => {
     if (!project || !matchesScope(req, project) || (await blockedByPrivacy(req, project))) {
       return res.status(404).json({ error: 'project not found' });
     }
+    // Restoring a deleted project needs its milestones/tasks/comments back
+    // too, since those cascade-delete along with it. Plan documents and task
+    // attachments (BLOBs) are deliberately not snapshotted here — too large
+    // to duplicate into every delete log entry — so those specifically stay
+    // gone even if the project itself is restored.
+    const milestonesSnapshot = await all('SELECT * FROM milestones WHERE project_id = ?', project.id);
+    const tasksSnapshot = await all('SELECT * FROM tasks WHERE project_id = ?', project.id);
+    const taskIds = tasksSnapshot.map((t) => t.id);
+    const commentsSnapshot = taskIds.length
+      ? await all(`SELECT * FROM comments WHERE task_id IN (${taskIds.map(() => '?').join(',')})`, ...taskIds)
+      : [];
+    const rolloutDatesSnapshot = await all('SELECT * FROM project_rollout_dates WHERE project_id = ?', project.id);
+
     await run('DELETE FROM projects WHERE id = ?', req.params.id);
     await logAudit({
       actor: req.user,
@@ -427,6 +441,13 @@ router.delete('/:id', canEdit, async (req, res, next) => {
       entityType: 'project',
       entityId: project.id,
       entityName: project.name,
+      snapshot: {
+        row: project,
+        milestones: milestonesSnapshot,
+        tasks: tasksSnapshot,
+        comments: commentsSnapshot,
+        rolloutDates: rolloutDatesSnapshot,
+      },
     });
     res.status(204).end();
   } catch (err) {

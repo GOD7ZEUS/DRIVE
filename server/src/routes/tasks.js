@@ -148,6 +148,7 @@ router.patch('/:id', canEdit, async (req, res, next) => {
         entityId: task.id,
         entityName: updatedTask.title,
         details: changeSummary,
+        snapshot: { before: task },
       });
     }
 
@@ -165,6 +166,9 @@ router.delete('/:id', canEdit, async (req, res, next) => {
   try {
     const task = await loadScopedTask(req);
     if (!task) return res.status(404).json({ error: 'task not found' });
+    // Comments cascade-delete with the task and are cheap to snapshot;
+    // attachments (BLOBs) are not — those stay gone even if restored.
+    const commentsSnapshot = await all('SELECT * FROM comments WHERE task_id = ?', req.params.id);
     await run('DELETE FROM tasks WHERE id = ?', req.params.id);
     await logAudit({
       actor: req.user,
@@ -172,6 +176,7 @@ router.delete('/:id', canEdit, async (req, res, next) => {
       entityType: 'task',
       entityId: task.id,
       entityName: task.title,
+      snapshot: { row: task, comments: commentsSnapshot },
     });
     res.status(204).end();
   } catch (err) {

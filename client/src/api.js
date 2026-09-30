@@ -71,6 +71,28 @@ export const api = {
   getTaskAttachmentDownloadUrl: (taskId, attachmentId) =>
     `${BASE_URL}/tasks/${taskId}/attachments/${attachmentId}/download`,
 
+  getMilestoneAttachments: (milestoneId) => request(`/milestones/${milestoneId}/attachments`),
+  uploadMilestoneAttachment: async (milestoneId, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${BASE_URL}/milestones/${milestoneId}/attachments`, {
+      method: 'POST',
+      credentials: 'include',
+      body: formData,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const error = new Error(body.error || `Request failed: ${res.status}`);
+      error.status = res.status;
+      throw error;
+    }
+    return res.json();
+  },
+  deleteMilestoneAttachment: (milestoneId, attachmentId) =>
+    request(`/milestones/${milestoneId}/attachments/${attachmentId}`, { method: 'DELETE' }),
+  getMilestoneAttachmentDownloadUrl: (milestoneId, attachmentId) =>
+    `${BASE_URL}/milestones/${milestoneId}/attachments/${attachmentId}/download`,
+
   getRolloutDates: (projectId) => request(`/projects/${projectId}/rollout-dates`),
   addRolloutDate: (projectId, rollout_date) =>
     request(`/projects/${projectId}/rollout-dates`, { method: 'POST', body: JSON.stringify({ rollout_date }) }),
@@ -167,4 +189,5 @@ export const api = {
   chat: (messages) => request('/chat', { method: 'POST', body: JSON.stringify({ messages }) }),
 
   getAuditLog: () => request('/audit-log'),
+  restoreAuditLogEntry: (id) => request(`/audit-log/${id}/restore`, { method: 'POST' }),
 };

@@ -81,6 +81,12 @@ export default function ProjectDetail() {
   const [editMilestoneTitle, setEditMilestoneTitle] = useState('');
   const [editMilestoneDue, setEditMilestoneDue] = useState('');
 
+  const [milestoneAttachments, setMilestoneAttachments] = useState({});
+  const milestoneFileInputRef = useRef(null);
+  const [uploadTargetMilestoneId, setUploadTargetMilestoneId] = useState(null);
+  const [uploadingMilestoneAttachment, setUploadingMilestoneAttachment] = useState(false);
+  const [milestoneAttachmentError, setMilestoneAttachmentError] = useState({});
+
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [taskTitle, setTaskTitle] = useState('');
   const [taskAssigneeUserId, setTaskAssigneeUserId] = useState('');
@@ -104,8 +110,21 @@ export default function ProjectDetail() {
         setPlans(pl);
         setRolloutDates(rd);
         setResponsibleUserId(p.responsible_user_id || '');
+        loadMilestoneAttachments(m);
       })
       .catch((e) => setError(e.message));
+  }
+
+  function loadMilestoneAttachments(milestoneList) {
+    Promise.all(milestoneList.map((m) => api.getMilestoneAttachments(m.id).catch(() => [])))
+      .then((lists) => {
+        const byMilestone = {};
+        milestoneList.forEach((m, i) => {
+          byMilestone[m.id] = lists[i];
+        });
+        setMilestoneAttachments(byMilestone);
+      })
+      .catch(() => {});
   }
 
   useEffect(load, [id]);
@@ -234,6 +253,34 @@ export default function ProjectDetail() {
     if (!confirm(`Delete milestone "${m.title}"? Its tasks will become unassigned from it.`)) return;
     await api.deleteMilestone(m.id);
     load();
+  }
+
+  function triggerMilestoneAttachmentUpload(milestoneId) {
+    setUploadTargetMilestoneId(milestoneId);
+    milestoneFileInputRef.current?.click();
+  }
+
+  async function handleMilestoneFileSelected(e) {
+    const file = e.target.files[0];
+    e.target.value = '';
+    const milestoneId = uploadTargetMilestoneId;
+    if (!file || !milestoneId) return;
+    setMilestoneAttachmentError((prev) => ({ ...prev, [milestoneId]: '' }));
+    setUploadingMilestoneAttachment(true);
+    try {
+      await api.uploadMilestoneAttachment(milestoneId, file);
+      loadMilestoneAttachments(milestones);
+    } catch (err) {
+      setMilestoneAttachmentError((prev) => ({ ...prev, [milestoneId]: err.message }));
+    } finally {
+      setUploadingMilestoneAttachment(false);
+    }
+  }
+
+  async function handleDeleteMilestoneAttachment(milestoneId, a) {
+    if (!confirm(`Delete file "${a.filename}"? This cannot be undone.`)) return;
+    await api.deleteMilestoneAttachment(milestoneId, a.id);
+    loadMilestoneAttachments(milestones);
   }
 
   async function handleAddTask(e) {
@@ -798,6 +845,16 @@ export default function ProjectDetail() {
           )}
         </div>
 
+        {canEdit && (
+          <input
+            ref={milestoneFileInputRef}
+            type="file"
+            accept=".pdf,.png,.jpg,.jpeg,.eml,.msg"
+            style={{ display: 'none' }}
+            onChange={handleMilestoneFileSelected}
+          />
+        )}
+
         {canEdit && showMilestoneForm && (
           <form className="inline-form panel" onSubmit={handleAddMilestone} style={{ marginBottom: 12 }}>
             <input
@@ -876,6 +933,46 @@ export default function ProjectDetail() {
                       </div>
                     </div>
                   )}
+                  <div className="milestone-tasks">
+                    <div className="row-between">
+                      <span className="muted">
+                        Files{milestoneAttachments[m.id]?.length ? ` (${milestoneAttachments[m.id].length})` : ''}
+                      </span>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={() => triggerMilestoneAttachmentUpload(m.id)}
+                          disabled={uploadingMilestoneAttachment && uploadTargetMilestoneId === m.id}
+                        >
+                          {uploadingMilestoneAttachment && uploadTargetMilestoneId === m.id
+                            ? 'Uploading…'
+                            : 'Upload File'}
+                        </button>
+                      )}
+                    </div>
+                    {milestoneAttachmentError[m.id] && <p className="error">{milestoneAttachmentError[m.id]}</p>}
+                    {milestoneAttachments[m.id]?.map((a) => (
+                      <div key={a.id} className="list-item nested">
+                        <div>
+                          <div className="title">{a.filename}</div>
+                          <div className="muted">
+                            {formatFileSize(a.size_bytes)}
+                            {a.uploaded_by ? ` · ${a.uploaded_by}` : ''} · {formatDateTime(a.created_at)}
+                          </div>
+                        </div>
+                        <div className="row">
+                          <a href={api.getMilestoneAttachmentDownloadUrl(m.id, a.id)} target="_blank" rel="noreferrer">
+                            <button type="button">View</button>
+                          </a>
+                          {canEdit && (
+                            <button className="danger" onClick={() => handleDeleteMilestoneAttachment(m.id, a)}>
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                   {milestoneTasks.length > 0 && (
                     <div className="milestone-tasks">
                       {milestoneTasks.map((t) => (
