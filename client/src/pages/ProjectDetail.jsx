@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
-import StatusBadge from '../components/StatusBadge.jsx';
+import StatusBadge, { STATUS_LABELS } from '../components/StatusBadge.jsx';
 import { ProjectInsightsPanel, useShowInsightsPreference } from '../components/ProjectInsights.jsx';
 import CompanyDepartmentFields from '../components/CompanyDepartmentFields.jsx';
 import SubDepartmentField from '../components/SubDepartmentField.jsx';
 import { formatUserName } from '../userDisplay.js';
 import { formatDate, formatDateTime } from '../dateFormat.js';
 
-const PROJECT_STATUSES = ['planning', 'active', 'on_hold', 'completed'];
+const PROJECT_STATUSES = ['planning', 'active', 'live', 'on_hold', 'completed'];
 const TASK_STATUSES = ['todo', 'in_progress', 'done'];
 
 function formatFileSize(bytes) {
@@ -55,6 +55,9 @@ export default function ProjectDetail() {
 
   const [responsibleUserId, setResponsibleUserId] = useState('');
   const [assignedByUserId, setAssignedByUserId] = useState('');
+  const [editingDeliveredOn, setEditingDeliveredOn] = useState(false);
+  const [deliveredOnText, setDeliveredOnText] = useState('');
+  const [deliveredOnError, setDeliveredOnError] = useState('');
   const canSetAssignedBy = user.role === 'super_admin';
   const [showDetails, setShowDetails] = useState(false);
 
@@ -164,6 +167,18 @@ export default function ProjectDetail() {
       alert(err.message);
     }
     load();
+  }
+
+  async function handleSaveDeliveredOn(e) {
+    e.preventDefault();
+    setDeliveredOnError('');
+    try {
+      await api.updateProject(id, { completed_on: deliveredOnText });
+      setEditingDeliveredOn(false);
+      load();
+    } catch (err) {
+      setDeliveredOnError(err.message);
+    }
   }
 
   async function handleAssignedByChange(e) {
@@ -578,7 +593,7 @@ export default function ProjectDetail() {
                 <select value={project.status} onChange={(e) => handleStatusChange(e.target.value)}>
                   {PROJECT_STATUSES.map((s) => (
                     <option key={s} value={s}>
-                      {s}
+                      {STATUS_LABELS[s] || s}
                     </option>
                   ))}
                 </select>
@@ -589,15 +604,50 @@ export default function ProjectDetail() {
           </tr>
           {project.completed_at && (
             <tr>
-              <th>Completed</th>
+              <th>{project.status === 'live' ? 'Live since' : 'Completed'}</th>
               <td>
-                {formatDate(project.completed_at)}
-                {tatDeadline && (
-                  <span className="muted">
-                    {' '}
-                    ·{' '}
-                    {project.completed_at.slice(0, 10) <= tatDeadline ? 'within TAT' : 'exceeded TAT'}
-                  </span>
+                {editingDeliveredOn ? (
+                  <form className="inline-form" onSubmit={handleSaveDeliveredOn}>
+                    <input
+                      type="date"
+                      value={deliveredOnText}
+                      max={new Date().toISOString().slice(0, 10)}
+                      onChange={(e) => setDeliveredOnText(e.target.value)}
+                      required
+                      autoFocus
+                    />
+                    <button type="submit" className="primary">
+                      Save
+                    </button>
+                    <button type="button" onClick={() => setEditingDeliveredOn(false)}>
+                      Cancel
+                    </button>
+                    {deliveredOnError && <p className="error">{deliveredOnError}</p>}
+                  </form>
+                ) : (
+                  <>
+                    {formatDate(project.completed_at)}
+                    {tatDeadline && (
+                      <span className="muted">
+                        {' '}
+                        ·{' '}
+                        {project.completed_at.slice(0, 10) <= tatDeadline ? 'within TAT' : 'exceeded TAT'}
+                      </span>
+                    )}
+                    {isSuperAdmin && (
+                      <button
+                        type="button"
+                        style={{ marginLeft: 10 }}
+                        onClick={() => {
+                          setDeliveredOnText(project.completed_at.slice(0, 10));
+                          setDeliveredOnError('');
+                          setEditingDeliveredOn(true);
+                        }}
+                      >
+                        Edit
+                      </button>
+                    )}
+                  </>
                 )}
               </td>
             </tr>
@@ -1076,7 +1126,7 @@ export default function ProjectDetail() {
               <option value="all">All statuses</option>
               {TASK_STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {s}
+                  {STATUS_LABELS[s] || s}
                 </option>
               ))}
             </select>

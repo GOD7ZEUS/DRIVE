@@ -170,12 +170,6 @@ export default function Users() {
       <div className="row-between page-header">
         <div>
           <h1>Users</h1>
-          {users && (
-            <p className="muted page-subtitle">
-              {users.length} {users.length === 1 ? 'account' : 'accounts'}
-              {isMaster && ` · insights enabled for ${insightsGranted}`}
-            </p>
-          )}
         </div>
         <button className="primary" onClick={() => setShowForm((s) => !s)}>
           {showForm ? 'Cancel' : 'New Account'}

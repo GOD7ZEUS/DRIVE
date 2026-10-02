@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
-import StatusBadge from '../components/StatusBadge.jsx';
+import StatusBadge, { STATUS_LABELS } from '../components/StatusBadge.jsx';
 import { formatUserName } from '../userDisplay.js';
 import { formatDate, formatDateTime } from '../dateFormat.js';
 
@@ -126,7 +126,7 @@ export default function TaskDetail() {
                 <select value={task.status} onChange={(e) => handleStatusChange(e.target.value)}>
                   {TASK_STATUSES.map((s) => (
                     <option key={s} value={s}>
-                      {s}
+                      {STATUS_LABELS[s] || s}
                     </option>
                   ))}
                 </select>

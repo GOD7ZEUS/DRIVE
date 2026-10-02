@@ -187,13 +187,6 @@ export default function Companies() {
       <div className="row-between page-header">
         <div>
           <h1>Companies</h1>
-          {companies && (
-            <p className="muted page-subtitle">
-              {companies.length} {companies.length === 1 ? 'company' : 'companies'} · {totals.departments}{' '}
-              {totals.departments === 1 ? 'department' : 'departments'} · {totals.projects}{' '}
-              {totals.projects === 1 ? 'project' : 'projects'}
-            </p>
-          )}
         </div>
         {!isProAdmin && (
           <button

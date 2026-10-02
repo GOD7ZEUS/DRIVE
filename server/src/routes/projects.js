@@ -37,7 +37,11 @@ function toProjectResponse(project, req) {
   return response;
 }
 
-const PROJECT_STATUSES = ['planning', 'active', 'on_hold', 'completed'];
+// 'active' is shown as "In Development" (still being built). 'live' means
+// rolled out and running as an ongoing process — delivered, so it counts the
+// same as 'completed' for TAT, health and open-work figures.
+const PROJECT_STATUSES = ['planning', 'active', 'live', 'on_hold', 'completed'];
+const DELIVERED_STATUSES = ['live', 'completed'];
 
 // Plan documents are kept as small BLOBs in the same database as everything
 // else rather than on local disk — Render's free tier disk is wiped on every
@@ -515,12 +519,37 @@ router.patch('/:id', canEdit, async (req, res, next) => {
       assignedByText = resolved.user ? displayName(resolved.user) : null;
     }
 
-    // Track when a project actually finished (for TAT reporting), separate from
-    // updated_at which changes on any edit. Re-opening a completed project
-    // clears it, so re-completing it later records a fresh completion date.
+    // Track when a project was delivered (for TAT reporting), separate from
+    // updated_at which changes on any edit. Live and Completed both count as
+    // delivered: moving into either stamps the date, moving between them keeps
+    // it (going live IS the delivery), and re-opening clears it so a later
+    // delivery records a fresh date.
     let completedAt = project.completed_at;
+    const newStatus = status !== undefined ? status : project.status;
     if (status !== undefined && status !== project.status) {
-      completedAt = status === 'completed' ? new Date().toISOString() : null;
+      const wasDelivered = DELIVERED_STATUSES.includes(project.status);
+      const isDelivered = DELIVERED_STATUSES.includes(status);
+      if (!isDelivered) completedAt = null;
+      else if (!wasDelivered || !completedAt) completedAt = new Date().toISOString();
+    }
+    // The delivery date can be corrected after the fact (e.g. a project
+    // marked Live late that actually went live on its rollout day) —
+    // structural, so Super Admin/Pro Admin only, and only while delivered.
+    if (req.body.completed_on !== undefined) {
+      if (!['super_admin', 'pro_admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'only Super Admin can change the delivery date' });
+      }
+      if (!DELIVERED_STATUSES.includes(newStatus)) {
+        return res.status(400).json({ error: 'a delivery date only applies to Live or Completed projects' });
+      }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(req.body.completed_on)) {
+        return res.status(400).json({ error: 'completed_on must be a YYYY-MM-DD date' });
+      }
+      if (req.body.completed_on > new Date().toISOString().slice(0, 10)) {
+        return res.status(400).json({ error: 'the delivery date cannot be in the future' });
+      }
+      // Midday UTC, so the calendar date reads the same in any timezone.
+      completedAt = `${req.body.completed_on}T12:00:00.000Z`;
     }
 
     await run(
@@ -552,16 +581,23 @@ router.patch('/:id', canEdit, async (req, res, next) => {
       status: status !== undefined ? status : project.status,
       responsible_person: responsiblePersonText,
       assigned_by: assignedByText,
+      completed_at: completedAt ? completedAt.slice(0, 10) : null,
       company: companyRow.name,
       department: departmentRow.name,
       sub_department: subDepartmentRow.name,
     };
-    const changeSummary = describeChanges(project, afterValues, {
+    // completed_at is compared by calendar day on both sides, or every edit to a
+    // delivered project would log a phantom "delivery date" change.
+    const changeSummary = describeChanges(
+      { ...project, completed_at: project.completed_at ? project.completed_at.slice(0, 10) : null },
+      afterValues,
+      {
       name: 'name',
       description: 'description',
       status: 'status',
       responsible_person: 'owner',
       assigned_by: 'assigned by',
+      completed_at: 'delivery date',
       company: 'company',
       department: 'department',
       sub_department: 'sub-department',

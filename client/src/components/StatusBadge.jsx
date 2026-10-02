@@ -1,6 +1,9 @@
 export const STATUS_LABELS = {
   planning: 'Planning',
-  active: 'Active',
+  // Stored as 'active'; shown as In Development — Live is the other
+  // "in progress" meaning (rolled out, ongoing).
+  active: 'In Development',
+  live: 'Live',
   on_hold: 'On Hold',
   completed: 'Completed',
   pending: 'Pending',

@@ -136,8 +136,8 @@ router.get('/', async (req, res, next) => {
        SELECT id, name, status, company, department, tat_deadline, completed_at FROM project_baseline
        WHERE tat_deadline IS NOT NULL
          AND (
-           (status = 'completed' AND completed_at IS NOT NULL AND date(completed_at) > date(tat_deadline))
-           OR (status != 'completed' AND date(tat_deadline) < date('now'))
+           (status IN ('completed', 'live') AND completed_at IS NOT NULL AND date(completed_at) > date(tat_deadline))
+           OR (status NOT IN ('completed', 'live') AND date(tat_deadline) < date('now'))
          )
          ${projectScopeAnd}
        ORDER BY tat_deadline ASC`,
@@ -149,8 +149,8 @@ router.get('/', async (req, res, next) => {
        SELECT id, name, status, company, department, tat_deadline, completed_at FROM project_baseline
        WHERE tat_deadline IS NOT NULL
          AND (
-           (status = 'completed' AND completed_at IS NOT NULL AND date(completed_at) <= date(tat_deadline))
-           OR (status != 'completed' AND date(tat_deadline) >= date('now'))
+           (status IN ('completed', 'live') AND completed_at IS NOT NULL AND date(completed_at) <= date(tat_deadline))
+           OR (status NOT IN ('completed', 'live') AND date(tat_deadline) >= date('now'))
          )
          ${projectScopeAnd}
        ORDER BY tat_deadline ASC`,
@@ -175,7 +175,7 @@ router.get('/', async (req, res, next) => {
          SUM(CASE WHEN r < date('now') THEN 1 ELSE 0 END) as overdue,
          SUM(CASE WHEN r >= date('now') AND r <= date('now', '+14 days') THEN 1 ELSE 0 END) as due_soon,
          SUM(CASE WHEN r > date('now', '+14 days') THEN 1 ELSE 0 END) as on_track
-       FROM (SELECT ${currentRollout} as r FROM projects WHERE status != 'completed' ${taskProjectFilter})`,
+       FROM (SELECT ${currentRollout} as r FROM projects WHERE status NOT IN ('completed', 'live') ${taskProjectFilter})`,
       ...filterParams
     );
 
@@ -199,7 +199,7 @@ router.get('/', async (req, res, next) => {
     // Open projects rolling out in each of the next 6 months.
     const rolloutRows = await all(
       `SELECT strftime('%Y-%m', r) as month, COUNT(*) as count
-       FROM (SELECT ${currentRollout} as r FROM projects WHERE status != 'completed' ${taskProjectFilter})
+       FROM (SELECT ${currentRollout} as r FROM projects WHERE status NOT IN ('completed', 'live') ${taskProjectFilter})
        WHERE r >= date('now', 'start of month') AND r < date('now', 'start of month', '+6 months')
        GROUP BY month`,
       ...filterParams
@@ -227,7 +227,7 @@ router.get('/', async (req, res, next) => {
     const upcomingRollouts = await all(
       `SELECT * FROM (
          SELECT id, name, status, responsible_person, ${currentRollout} as rollout_date
-         FROM projects WHERE status != 'completed' ${taskProjectFilter}
+         FROM projects WHERE status NOT IN ('completed', 'live') ${taskProjectFilter}
        )
        WHERE rollout_date >= date('now') AND rollout_date <= date('now', '+30 days')
        ORDER BY rollout_date ASC`,
@@ -239,7 +239,7 @@ router.get('/', async (req, res, next) => {
     // is what both columns store alongside the user id.
     const ownerRows = await all(
       `SELECT responsible_person as person, COUNT(*) as projects
-       FROM projects WHERE status != 'completed' AND responsible_person != '' ${taskProjectFilter}
+       FROM projects WHERE status NOT IN ('completed', 'live') AND responsible_person != '' ${taskProjectFilter}
        GROUP BY responsible_person`,
       ...filterParams
     );
@@ -268,6 +268,7 @@ router.get('/', async (req, res, next) => {
          SUM(CASE WHEN status = 'planning' THEN 1 ELSE 0 END) as planning,
          SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active,
          SUM(CASE WHEN status = 'on_hold' THEN 1 ELSE 0 END) as on_hold,
+         SUM(CASE WHEN status = 'live' THEN 1 ELSE 0 END) as live,
          SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
          COUNT(*) as total
        FROM projects WHERE 1=1 ${taskProjectFilter}

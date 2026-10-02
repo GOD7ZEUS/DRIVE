@@ -9,7 +9,7 @@ import SubDepartmentField from '../components/SubDepartmentField.jsx';
 import { formatUserName } from '../userDisplay.js';
 import { formatDate } from '../dateFormat.js';
 
-const STATUSES = ['planning', 'active', 'on_hold', 'completed'];
+const STATUSES = ['planning', 'active', 'live', 'on_hold', 'completed'];
 const FILTER_STORAGE_KEY = 'projects.filters';
 const SORT_STORAGE_KEY = 'projects.rolloutSort';
 const NO_FILTERS = { companyId: 'all', departmentId: 'all', userId: 'all', status: 'all', from: '', to: '' };
@@ -443,7 +443,6 @@ export default function Projects() {
                         <span className="switch-track" aria-hidden="true" />
                         <span>
                           Show insights
-                          <span className="muted"> — countdown, trend &amp; commencement date on each project</span>
                         </span>
                       </label>
                     )}

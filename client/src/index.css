@@ -8,6 +8,7 @@
   --accent-2: #9333ea;
   --accent-bg: rgba(109, 75, 255, 0.1);
   --chart-line: #6d4bff;
+  --status-live-text: #0e7490;
   --series-created: #2a78d6;
   --series-completed: #eb6834;
   --shadow-sm: 0 1px 2px rgba(20, 10, 40, 0.04), 0 1px 3px rgba(20, 10, 40, 0.03);
@@ -16,6 +17,7 @@
 
   --status-planning: #6b7280;
   --status-active: #2563eb;
+  --status-live: #0891b2;
   --status-on_hold: #d97706;
   --status-completed: #16a34a;
   --status-pending: #6b7280;
@@ -46,6 +48,7 @@
     --accent-2: #d8b4fe;
     --accent-bg: rgba(167, 139, 250, 0.15);
   --chart-line: #9478f5;
+  --status-live-text: #22b6d4;
   --series-created: #3987e5;
   --series-completed: #d95926;
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25), 0 1px 3px rgba(0, 0, 0, 0.2);
@@ -64,6 +67,7 @@
   --accent-2: #d8b4fe;
   --accent-bg: rgba(167, 139, 250, 0.15);
   --chart-line: #9478f5;
+  --status-live-text: #22b6d4;
   --series-created: #3987e5;
   --series-completed: #d95926;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25), 0 1px 3px rgba(0, 0, 0, 0.2);
@@ -81,6 +85,7 @@
   --accent-2: #9333ea;
   --accent-bg: rgba(109, 75, 255, 0.1);
   --chart-line: #6d4bff;
+  --status-live-text: #0e7490;
   --series-created: #2a78d6;
   --series-completed: #eb6834;
   --shadow-sm: 0 1px 2px rgba(20, 10, 40, 0.04), 0 1px 3px rgba(20, 10, 40, 0.03);
@@ -483,7 +488,18 @@ a {
   grid-template-columns: repeat(3, 1fr);
 }
 
+.grid-5 {
+  grid-template-columns: repeat(5, 1fr);
+}
+
+@media (max-width: 960px) {
+  .grid-5 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
 @media (max-width: 720px) {
+  .grid-5,
   .grid-4,
   .grid-3 {
     grid-template-columns: repeat(2, 1fr);
@@ -661,6 +677,12 @@ a.list-item:hover {
   color: var(--status-planning);
   background: color-mix(in srgb, var(--status-planning) 14%, transparent);
   border-color: color-mix(in srgb, var(--status-planning) 30%, transparent);
+}
+.badge-live {
+  /* Text needs a stronger step than the fill for small-text contrast. */
+  color: var(--status-live-text);
+  background: color-mix(in srgb, var(--status-live) 14%, transparent);
+  border-color: color-mix(in srgb, var(--status-live) 30%, transparent);
 }
 .badge-active, .badge-in_progress {
   color: var(--status-active);
@@ -1144,10 +1166,6 @@ a.list-item:hover {
   gap: 8px;
 }
 
-.insights-caption {
-  margin: -4px 0 10px;
-  font-size: 12px;
-}
 
 .insights-subhead {
   margin-top: 16px !important;
@@ -1437,6 +1455,7 @@ form.inline-form {
 }
 
 @media (max-width: 480px) {
+  .grid-5,
   .grid-4 {
     grid-template-columns: 1fr;
   }
@@ -1528,10 +1547,6 @@ form.inline-form {
 /* ════════════════════════════════════════════════════════════════════
    Page chrome shared by Users / Companies / Dashboard
    ════════════════════════════════════════════════════════════════════ */
-.page-subtitle {
-  margin: 4px 0 0;
-  font-size: 13px;
-}
 
 .list-toolbar {
   display: flex;
@@ -1618,10 +1633,6 @@ form.inline-form {
   line-height: 1.4;
 }
 
-.filter-insights-switch .muted {
-  font-weight: 500;
-  font-size: 12px;
-}
 
 .insights-reveal {
   display: inline-flex;
@@ -2020,6 +2031,10 @@ form.inline-form {
 
 .status-meter-p-on_hold {
   background: var(--status-on_hold);
+}
+
+.status-meter-p-live {
+  background: var(--status-live);
 }
 
 .status-meter-p-active {

@@ -13,10 +13,11 @@ import {
 } from '../components/ProjectInsights.jsx';
 import { formatDate } from '../dateFormat.js';
 
-const PROJECT_STATUS_ORDER = ['planning', 'active', 'on_hold', 'completed'];
+const PROJECT_STATUS_ORDER = ['planning', 'active', 'live', 'on_hold', 'completed'];
 const PROJECT_STATUS_LABELS = {
   planning: 'Planning',
-  active: 'Active',
+  active: 'In Development',
+  live: 'Live',
   on_hold: 'On Hold',
   completed: 'Completed',
 };
@@ -35,9 +36,9 @@ const HEALTH_SEGMENTS = [
 ];
 
 // Stacked-bar order is deliberate: it keeps On Hold (amber) and Completed
-// (green) apart, the one pair of these four that colour-blind readers struggle
-// to tell apart when the two touch.
-const STACK_ORDER = ['planning', 'on_hold', 'active', 'completed'];
+// (green) apart and puts Live (teal) between In Development (blue) and
+// Completed (green) — the order that validated for colour-blind readers.
+const STACK_ORDER = ['planning', 'on_hold', 'active', 'live', 'completed'];
 
 // "—" rather than "0%" when there is nothing to measure yet (0 of 0).
 const pct = (part, whole) => (whole ? `${Math.round((part / whole) * 100)}%` : '—');
@@ -239,7 +240,10 @@ export default function Dashboard() {
   const countFor = (statuses, status) => statuses.find((s) => s.status === status)?.count || 0;
 
   const totalProjects = data ? data.projectsByStatus.reduce((sum, s) => sum + s.count, 0) : 0;
-  const completedProjects = data ? countFor(data.projectsByStatus, 'completed') : 0;
+  // Live counts as delivered, same as Completed.
+  const completedProjects = data
+    ? countFor(data.projectsByStatus, 'completed') + countFor(data.projectsByStatus, 'live')
+    : 0;
   const totalTasks = data ? data.tasksByStatus.reduce((sum, s) => sum + s.count, 0) : 0;
   const doneTasks = data ? countFor(data.tasksByStatus, 'done') : 0;
   const overdueItems = data ? data.overdueTasks.length + data.overdueMilestones.length : 0;
@@ -250,11 +254,6 @@ export default function Dashboard() {
       <div className="row-between page-header">
         <div>
           <h1>Dashboard</h1>
-          <p className="muted page-subtitle">
-            {companyFilter === 'all'
-              ? 'Across every project you can see'
-              : `Filtered to ${companies?.find((c) => String(c.id) === companyFilter)?.name || 'one company'}`}
-          </p>
         </div>
         {isSuperAdmin && companies && companies.length > 0 && (
           <div className="row dashboard-filters">
@@ -290,7 +289,7 @@ export default function Dashboard() {
         <p className="muted">Loading…</p>
       ) : (
         <>
-          <div className="grid grid-4">
+          <div className="grid grid-5">
             {PROJECT_STATUS_ORDER.map((status) => (
               <div key={status} className="panel stat-card">
                 <div className="stat-value">{countFor(data.projectsByStatus, status)}</div>
@@ -305,7 +304,7 @@ export default function Dashboard() {
               <strong>{totalProjects}</strong>
             </div>
             <div className="kpi">
-              <span className="muted">Projects completed</span>
+              <span className="muted">Projects delivered</span>
               <strong>{pct(completedProjects, totalProjects)}</strong>
               <span className="muted">
                 {completedProjects} of {totalProjects}
@@ -339,8 +338,7 @@ export default function Dashboard() {
 
           <div className="dash-grid">
             <div className="panel dash-card dash-card-wide">
-              <h2>Task throughput</h2>
-              <p className="muted insights-caption">Tasks created vs completed each month, last 12 months</p>
+              <h2>Task throughput · last 12 months</h2>
               <Legend items={THROUGHPUT_SERIES} />
               <ColumnChart
                 data={data.taskThroughput}
@@ -359,7 +357,6 @@ export default function Dashboard() {
 
             <div className="panel dash-card">
               <h2>Project health</h2>
-              <p className="muted insights-caption">Open projects by distance to their rollout date</p>
               <StackedBar
                 label="Project health"
                 segments={HEALTH_SEGMENTS.map((s) => ({ ...s, count: data.health[s.key] }))}
@@ -370,8 +367,7 @@ export default function Dashboard() {
 
           <div className="dash-grid">
             <div className="panel dash-card">
-              <h2>Rollouts ahead</h2>
-              <p className="muted insights-caption">Open projects rolling out in each of the next 6 months</p>
+              <h2>Rollouts · next 6 months</h2>
               <ColumnChart
                 data={data.rolloutsByMonth}
                 series={ROLLOUT_SERIES}
@@ -406,7 +402,6 @@ export default function Dashboard() {
           <div className="dash-grid">
             <div className="panel dash-card dash-card-wide">
               <h2>Team workload</h2>
-              <p className="muted insights-caption">Open projects owned and open tasks assigned, per person</p>
               {data.workload.length === 0 ? (
                 <p className="muted">No assigned work yet.</p>
               ) : (

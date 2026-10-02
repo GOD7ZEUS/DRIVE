@@ -32,6 +32,7 @@ export function useShowInsightsPreference() {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const DELIVERED = ['live', 'completed'];
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function localDay(isoDate) {
@@ -78,7 +79,7 @@ export function getCountdown(project) {
   const rollout = localDay(project.current_rollout_date);
   // A finished project's clock stops on the day it was completed.
   const completedDay =
-    project.status === 'completed' && project.completed_at ? localDayFromUtc(project.completed_at) : null;
+    DELIVERED.includes(project.status) && project.completed_at ? localDayFromUtc(project.completed_at) : null;
   const endDay = completedDay || today;
   const daysLeft = daysBetween(endDay, rollout);
   const totalDays = start ? Math.max(daysBetween(start, rollout), 0) : null;
@@ -90,9 +91,11 @@ export function getCountdown(project) {
 
   let state;
   let label;
-  if (project.status === 'completed') {
+  if (DELIVERED.includes(project.status)) {
+    // Live counts as delivered, same as Completed — judged by its go-live date.
     state = 'completed';
-    label = completedDay && daysLeft < 0 ? `Completed ${plural(-daysLeft, 'day')} late` : 'Completed on time';
+    const prefix = project.status === 'live' ? 'Live ·' : 'Completed';
+    label = completedDay && daysLeft < 0 ? `${prefix} ${plural(-daysLeft, 'day')} late` : `${prefix} on time`;
   } else if (daysLeft < 0) {
     state = 'overdue';
     label = `${plural(-daysLeft, 'day')} overdue`;
@@ -462,7 +465,6 @@ export function ProjectInsightsPanel({ project, insights, onHide }) {
       <div className="insights-grid">
         <div className="insights-card insights-card-wide">
           <h3>Tasks completed over time</h3>
-          <p className="muted insights-caption">Running total by month, from commencement to today</p>
           {insights.totalTasks > 0 ? (
             <>
               <TrendChart months={insights.months} />
