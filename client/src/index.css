@@ -642,7 +642,6 @@ a.list-item:hover {
 .project-row .project-description {
   min-height: 0;
   overflow-y: auto;
-  overscroll-behavior: contain;
   padding-right: 6px;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
