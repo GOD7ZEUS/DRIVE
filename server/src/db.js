@@ -215,6 +215,9 @@ await db.execute(`
   )
   WHERE status = 'done' AND completed_at IS NULL
 `);
+// Master can grant any account access to Project Insights (and the
+// commencement date that comes with them) from the Users page.
+await ensureColumn('users', 'can_view_insights', 'INTEGER NOT NULL DEFAULT 0');
 await ensureColumn('audit_log', 'snapshot', 'TEXT');
 await ensureColumn('audit_log', 'restored_at', 'TEXT');
 
@@ -271,8 +274,37 @@ export function displayName(user) {
   return name || user.email;
 }
 
+// Company, department, and sub-department names are always stored in capitals,
+// however they were typed. Everything that creates or renames one goes
+// through here.
+export function toOrgName(name) {
+  return name.trim().toUpperCase();
+}
+
+// Brings any existing mixed-case names (and the plain-text copies of them on
+// projects and users) up to capitals. Idempotent — only touches rows that
+// aren't already uppercase. The comparison is forced to COLLATE BINARY: the
+// name columns are COLLATE NOCASE, under which 'Royal' and 'ROYAL' compare
+// equal and nothing would ever be updated. That same NOCASE uniqueness is
+// why uppercasing can never collide with another row.
+export async function normalizeOrgNameCase() {
+  await db.batch(
+    [
+      'UPDATE companies SET name = UPPER(name) WHERE name != UPPER(name) COLLATE BINARY',
+      'UPDATE departments SET name = UPPER(name) WHERE name != UPPER(name) COLLATE BINARY',
+      'UPDATE sub_departments SET name = UPPER(name) WHERE name != UPPER(name) COLLATE BINARY',
+      'UPDATE projects SET company = UPPER(company) WHERE company != UPPER(company) COLLATE BINARY',
+      'UPDATE projects SET department = UPPER(department) WHERE department != UPPER(department) COLLATE BINARY',
+      'UPDATE projects SET sub_department = UPPER(sub_department) WHERE sub_department != UPPER(sub_department) COLLATE BINARY',
+      'UPDATE users SET company = UPPER(company) WHERE company != UPPER(company) COLLATE BINARY',
+      'UPDATE users SET department = UPPER(department) WHERE department != UPPER(department) COLLATE BINARY',
+    ],
+    'write'
+  );
+}
+
 export async function getOrCreateCompany(name) {
-  const trimmed = name.trim();
+  const trimmed = toOrgName(name);
   const existing = await get('SELECT * FROM companies WHERE name = ?', trimmed);
   if (existing) return existing;
   const result = await run('INSERT INTO companies (name) VALUES (?)', trimmed);
@@ -280,7 +312,7 @@ export async function getOrCreateCompany(name) {
 }
 
 export async function getOrCreateDepartment(companyId, name) {
-  const trimmed = name.trim();
+  const trimmed = toOrgName(name);
   const existing = await get(
     'SELECT * FROM departments WHERE company_id = ? AND name = ?',
     companyId,
@@ -300,7 +332,7 @@ export async function getOrCreateDepartment(companyId, name) {
 // form (and a project's own Edit tab), so this getOrCreate is the sole way
 // a sub_departments row comes into existence.
 export async function getOrCreateSubDepartment(departmentId, name) {
-  const trimmed = name.trim();
+  const trimmed = toOrgName(name);
   const existing = await get(
     'SELECT * FROM sub_departments WHERE department_id = ? AND name = ?',
     departmentId,
@@ -355,6 +387,8 @@ export function describeChanges(before, after, fieldLabels) {
   }
   return parts.join('; ');
 }
+
+await normalizeOrgNameCase();
 
 const superAdminCount = (await get("SELECT COUNT(*) as count FROM users WHERE role = 'super_admin'"))
   .count;

@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import StatusBadge, { STATUS_LABELS } from '../components/StatusBadge.jsx';
-import { CardInsights, commencementDate } from '../components/ProjectInsights.jsx';
+import { CardInsights, commencementDate, useShowInsightsPreference } from '../components/ProjectInsights.jsx';
 import CompanyDepartmentFields from '../components/CompanyDepartmentFields.jsx';
 import SubDepartmentField from '../components/SubDepartmentField.jsx';
 import { formatUserName } from '../userDisplay.js';
@@ -92,17 +92,27 @@ export default function Projects() {
     }
   });
 
-  const isMaster = !!user.is_master;
+  // Access comes from the server (master, or granted by master); whether the
+  // insights actually show is each person's own "Show insights" choice.
+  const canViewInsights = !!user.can_view_insights;
+  const [showInsightsPref, setShowInsightsPref] = useShowInsightsPreference();
+  const insightsOn = canViewInsights && showInsightsPref;
   const [insights, setInsights] = useState({});
   const [showFilters, setShowFilters] = useState(false);
   const filtersRef = useRef(null);
 
   function load() {
     api.getProjects().then(setProjects).catch((e) => setError(e.message));
-    if (isMaster) api.getProjectsInsights().then(setInsights).catch(() => setInsights({}));
   }
 
   useEffect(load, []);
+
+  // Fetched only while insights are switched on — and again after the
+  // project list reloads (e.g. a new project), so cards never go stale.
+  useEffect(() => {
+    if (!insightsOn) return;
+    api.getProjectsInsights().then(setInsights).catch(() => setInsights({}));
+  }, [insightsOn, projects]);
 
   useEffect(() => {
     if (!showFilters) return undefined;
@@ -422,6 +432,21 @@ export default function Projects() {
                         <p className="error">Start date is after end date.</p>
                       )}
                     </fieldset>
+                    {canViewInsights && (
+                      <label className="switch filter-insights-switch">
+                        <input
+                          type="checkbox"
+                          role="switch"
+                          checked={showInsightsPref}
+                          onChange={(e) => setShowInsightsPref(e.target.checked)}
+                        />
+                        <span className="switch-track" aria-hidden="true" />
+                        <span>
+                          Show insights
+                          <span className="muted"> — countdown, trend &amp; commencement date on each project</span>
+                        </span>
+                      </label>
+                    )}
                     <div className="row-between filters-popover-footer">
                       <button
                         type="button"
@@ -627,10 +652,10 @@ export default function Projects() {
               )}
               {p.description && <div className="muted project-meta multiline">{p.description}</div>}
             </div>
-            {isMaster && <CardInsights project={p} insights={insights[p.id]} />}
+            {insightsOn && <CardInsights project={p} insights={insights[p.id]} />}
             <div className="project-status-col">
               <StatusBadge status={p.status} />
-              {isMaster && commencementDate(p) && (
+              {insightsOn && commencementDate(p) && (
                 <div className="muted project-owner">Commenced: {formatDate(commencementDate(p))}</div>
               )}
               {p.current_rollout_date && (

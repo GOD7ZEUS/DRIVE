@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { get, all, run, logAudit, describeChanges } from '../db.js';
+import { get, all, run, logAudit, describeChanges, toOrgName } from '../db.js';
 
 const router = Router();
 
@@ -54,7 +54,7 @@ router.post('/', async (req, res, next) => {
     if (!name || !name.trim()) {
       return res.status(400).json({ error: 'name is required' });
     }
-    const existing = await get('SELECT id FROM companies WHERE name = ?', name.trim());
+    const existing = await get('SELECT id FROM companies WHERE name = ?', toOrgName(name));
     if (existing) {
       return res.status(409).json({ error: 'a company with that name already exists' });
     }
@@ -63,7 +63,7 @@ router.post('/', async (req, res, next) => {
     const makePrivate = req.user.is_master && !!is_private;
     const result = await run(
       'INSERT INTO companies (name, is_private) VALUES (?, ?)',
-      name.trim(),
+      toOrgName(name),
       makePrivate ? 1 : 0
     );
     res.status(201).json(await get('SELECT * FROM companies WHERE id = ?', result.lastInsertRowid));
@@ -86,13 +86,13 @@ router.patch('/:id', async (req, res, next) => {
       return res.status(400).json({ error: 'name cannot be empty' });
     }
     if (name !== undefined) {
-      const existing = await get('SELECT id FROM companies WHERE name = ? AND id != ?', name.trim(), req.params.id);
+      const existing = await get('SELECT id FROM companies WHERE name = ? AND id != ?', toOrgName(name), req.params.id);
       if (existing) {
         return res.status(409).json({ error: 'a company with that name already exists' });
       }
     }
 
-    const newName = name !== undefined ? name.trim() : company.name;
+    const newName = name !== undefined ? toOrgName(name) : company.name;
     const newIsPrivate = req.user.is_master && is_private !== undefined ? (is_private ? 1 : 0) : company.is_private;
 
     await run('UPDATE companies SET name = ?, is_private = ? WHERE id = ?', newName, newIsPrivate, req.params.id);
@@ -159,7 +159,7 @@ router.post('/:id/departments', async (req, res, next) => {
     const existing = await get(
       'SELECT id FROM departments WHERE company_id = ? AND name = ?',
       req.params.id,
-      name.trim()
+      toOrgName(name)
     );
     if (existing) {
       return res.status(409).json({ error: 'a department with that name already exists in this company' });
@@ -167,7 +167,7 @@ router.post('/:id/departments', async (req, res, next) => {
     const result = await run(
       'INSERT INTO departments (company_id, name) VALUES (?, ?)',
       req.params.id,
-      name.trim()
+      toOrgName(name)
     );
     res.status(201).json(await get('SELECT * FROM departments WHERE id = ?', result.lastInsertRowid));
   } catch (err) {
@@ -195,22 +195,22 @@ router.patch('/:id/departments/:deptId', async (req, res, next) => {
     const existing = await get(
       'SELECT id FROM departments WHERE company_id = ? AND name = ? AND id != ?',
       req.params.id,
-      name.trim(),
+      toOrgName(name),
       req.params.deptId
     );
     if (existing) {
       return res.status(409).json({ error: 'a department with that name already exists in this company' });
     }
 
-    await run('UPDATE departments SET name = ? WHERE id = ?', name.trim(), req.params.deptId);
-    if (name.trim() !== department.name) {
+    await run('UPDATE departments SET name = ? WHERE id = ?', toOrgName(name), req.params.deptId);
+    if (toOrgName(name) !== department.name) {
       await logAudit({
         actor: req.user,
         action: 'updated',
         entityType: 'department',
         entityId: department.id,
-        entityName: name.trim(),
-        details: `name: ${department.name} → ${name.trim()}`,
+        entityName: toOrgName(name),
+        details: `name: ${department.name} → ${toOrgName(name)}`,
         snapshot: { before: department },
       });
     }

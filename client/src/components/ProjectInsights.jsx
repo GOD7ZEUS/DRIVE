@@ -3,8 +3,33 @@ import { Link } from 'react-router-dom';
 import { STATUS_LABELS } from './StatusBadge.jsx';
 import { formatDate } from '../dateFormat.js';
 
-// Master-only project insights: the compact block on each project card and
-// the full panel on the project page. Everything here is display-only.
+// Project insights: the compact block on each project card and the full
+// panel on the project page. Access is master's by default (master can grant
+// it per account — the server enforces that); on top of access, each person
+// switches "Show insights" on for themselves. Display-only.
+
+const SHOW_INSIGHTS_KEY = 'drive.showInsights';
+
+// Off until the person turns it on; remembered per browser. Shared by the
+// Projects list and the project page so the choice carries between them.
+export function useShowInsightsPreference() {
+  const [on, setOn] = useState(() => {
+    try {
+      return localStorage.getItem(SHOW_INSIGHTS_KEY) === 'on';
+    } catch {
+      return false;
+    }
+  });
+  const update = (value) => {
+    setOn(value);
+    try {
+      localStorage.setItem(SHOW_INSIGHTS_KEY, value ? 'on' : 'off');
+    } catch {
+      // Storage unavailable — the choice lasts for this visit only.
+    }
+  };
+  return [on, update];
+}
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -179,7 +204,7 @@ export function CardInsights({ project, insights }) {
   );
 }
 
-function useElementWidth() {
+export function useElementWidth() {
   const ref = useRef(null);
   const [width, setWidth] = useState(0);
   useEffect(() => {
@@ -191,9 +216,18 @@ function useElementWidth() {
   return [ref, width];
 }
 
+// Month axis labels: every `every`-th month plus always the last one — but a
+// regular label that would land within one stride of the last is dropped,
+// so the final two never print on top of each other ("Sep 26Oct 26").
+export function showAxisLabel(i, count, every) {
+  const last = count - 1;
+  if (i === last) return true;
+  return i % every === 0 && last - i >= every;
+}
+
 // Whole-number ticks only — these are task counts, so "1.5" is never a
 // valid label. Picks the smallest clean step that needs at most 4 intervals.
-function countTicks(value) {
+export function countTicks(value) {
   const max = Math.max(value, 1);
   for (let magnitude = 1; ; magnitude *= 10) {
     for (const base of [1, 2, 5]) {
@@ -271,7 +305,7 @@ function TrendChart({ months }) {
             </g>
           ))}
           {months.map((m, i) =>
-            i % labelEvery === 0 || i === months.length - 1 ? (
+            showAxisLabel(i, months.length, labelEvery) ? (
               <text
                 key={m.month}
                 x={x(i)}
@@ -363,7 +397,7 @@ function TaskLine({ task, showDue }) {
   );
 }
 
-export function ProjectInsightsPanel({ project, insights }) {
+export function ProjectInsightsPanel({ project, insights, onHide }) {
   const countdown = useMemo(() => getCountdown(project), [project]);
   const commenced = commencementDate(project);
   if (!insights) return <p className="muted">Loading insights…</p>;
@@ -373,7 +407,11 @@ export function ProjectInsightsPanel({ project, insights }) {
     <div className="panel insights-panel">
       <div className="row-between">
         <h2>Project Insights</h2>
-        <span className="key-tag">MASTER ONLY</span>
+        {onHide && (
+          <button type="button" className="link-button" onClick={onHide}>
+            Hide insights
+          </button>
+        )}
       </div>
 
       <div className="insights-tiles">

@@ -33,6 +33,7 @@ export default function Companies() {
   const [editingDeptId, setEditingDeptId] = useState(null);
   const [editDeptName, setEditDeptName] = useState('');
   const [editDeptError, setEditDeptError] = useState('');
+  const [search, setSearch] = useState('');
 
   function load() {
     api.getCompanies().then(setCompanies).catch((e) => setError(e.message));
@@ -174,10 +175,26 @@ export default function Companies() {
     }
   }
 
+  const totals = (companies || []).reduce(
+    (acc, c) => ({ departments: acc.departments + c.department_count, projects: acc.projects + c.project_count }),
+    { departments: 0, projects: 0 }
+  );
+  const query = search.trim().toLowerCase();
+  const visibleCompanies = (companies || []).filter((c) => !query || c.name.toLowerCase().includes(query));
+
   return (
     <div>
-      <div className="row-between">
-        <h1>Companies</h1>
+      <div className="row-between page-header">
+        <div>
+          <h1>Companies</h1>
+          {companies && (
+            <p className="muted page-subtitle">
+              {companies.length} {companies.length === 1 ? 'company' : 'companies'} · {totals.departments}{' '}
+              {totals.departments === 1 ? 'department' : 'departments'} · {totals.projects}{' '}
+              {totals.projects === 1 ? 'project' : 'projects'}
+            </p>
+          )}
+        </div>
         {!isProAdmin && (
           <button
             className="primary"
@@ -194,9 +211,10 @@ export default function Companies() {
       {!isProAdmin && showCompanyForm && (
         <form className="panel inline-form" onSubmit={handleAddCompany} style={{ marginBottom: 20 }}>
           <input
-            placeholder="Company name"
+            placeholder="COMPANY NAME"
+            className="uppercase-input"
             value={companyName}
-            onChange={(e) => setCompanyName(e.target.value)}
+            onChange={(e) => setCompanyName(e.target.value.toUpperCase())}
             required
             autoFocus
           />
@@ -221,19 +239,35 @@ export default function Companies() {
       {!companies && !error && <p className="muted">Loading…</p>}
       {companies && companies.length === 0 && <p className="muted">No companies yet — add one above.</p>}
 
-      <div className="list">
-        {companies?.map((c) => (
-          <div key={c.id}>
+      {companies && companies.length > 1 && (
+        <div className="list-toolbar">
+          <input
+            type="search"
+            className="list-search"
+            placeholder="Search companies…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search companies"
+          />
+        </div>
+      )}
+      {companies && companies.length > 0 && visibleCompanies.length === 0 && (
+        <p className="muted">No companies match.</p>
+      )}
+
+      <div className="company-list">
+        {visibleCompanies.map((c) => (
+          <div key={c.id} className={`panel company-card${expandedId === c.id ? ' expanded' : ''}`}>
             {editingCompanyId === c.id ? (
               <form
-                className="panel inline-form"
+                className="inline-form"
                 onSubmit={(e) => handleSaveCompanyEdit(e, c.id)}
                 onClick={(e) => e.stopPropagation()}
-                style={{ marginBottom: 8 }}
               >
                 <input
+                  className="uppercase-input"
                   value={editCompanyName}
-                  onChange={(e) => setEditCompanyName(e.target.value)}
+                  onChange={(e) => setEditCompanyName(e.target.value.toUpperCase())}
                   required
                   autoFocus
                 />
@@ -261,26 +295,48 @@ export default function Companies() {
                 {editCompanyError && <p className="error">{editCompanyError}</p>}
               </form>
             ) : (
-              <div className="list-item" onClick={() => toggleCompany(c)} style={{ cursor: 'pointer' }}>
-                <div>
+              <div
+                className="company-card-head"
+                role="button"
+                tabIndex={0}
+                aria-expanded={expandedId === c.id}
+                onClick={() => toggleCompany(c)}
+                onKeyDown={(e) => {
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    toggleCompany(c);
+                  }
+                }}
+              >
+                <div className="company-avatar" aria-hidden="true">
+                  {c.name.slice(0, 1)}
+                </div>
+                <div className="company-name">
                   <div className="title">
                     {c.name} <span className="key-tag">Co.{c.id}</span>{' '}
                     {!!c.is_private && <span className="key-tag">PRIVATE</span>}
                   </div>
-                  <div className="muted">
-                    {c.department_count} department{c.department_count === 1 ? '' : 's'} ·{' '}
-                    {c.project_count} project{c.project_count === 1 ? '' : 's'}
+                  <div className="company-stats">
+                    <span className="stat-pill">
+                      <strong>{c.department_count}</strong> {c.department_count === 1 ? 'department' : 'departments'}
+                    </span>
+                    <span className="stat-pill">
+                      <strong>{c.project_count}</strong> {c.project_count === 1 ? 'project' : 'projects'}
+                    </span>
                   </div>
                 </div>
                 <div className="row">
                   <button onClick={(e) => startEditCompany(e, c)}>Edit</button>
-                  <span className="muted">{expandedId === c.id ? '▲' : '▼'}</span>
+                  <span className="chevron" aria-hidden="true">
+                    {expandedId === c.id ? '▲' : '▼'}
+                  </span>
                 </div>
               </div>
             )}
 
             {expandedId === c.id && (
-              <div className="panel" style={{ marginTop: 8, marginBottom: 8 }}>
+              <div className="company-card-body">
                 <div className="row-between">
                   <strong>Departments</strong>
                   <button
@@ -302,9 +358,10 @@ export default function Companies() {
                     style={{ margin: '12px 0' }}
                   >
                     <input
-                      placeholder="Department name"
+                      placeholder="DEPARTMENT NAME"
+                      className="uppercase-input"
                       value={deptName}
-                      onChange={(e) => setDeptName(e.target.value)}
+                      onChange={(e) => setDeptName(e.target.value.toUpperCase())}
                       required
                       autoFocus
                     />
@@ -318,51 +375,51 @@ export default function Companies() {
                 {departmentsError && <p className="error">{departmentsError}</p>}
                 {!departments && !departmentsError && <p className="muted">Loading departments…</p>}
                 {departments && departments.length === 0 && <p className="muted">No departments yet.</p>}
-                <div className="list">
+                <div className="department-grid">
                   {departments?.map((d) =>
                     editingDeptId === d.id ? (
                       <form
                         key={d.id}
-                        className="inline-form panel"
+                        className="department-tile editing"
                         onSubmit={(e) => handleSaveDeptEdit(e, c, d.id)}
                         onClick={(e) => e.stopPropagation()}
-                        style={{ marginBottom: 4 }}
                       >
                         <input
+                          className="uppercase-input"
                           value={editDeptName}
-                          onChange={(e) => setEditDeptName(e.target.value)}
+                          onChange={(e) => setEditDeptName(e.target.value.toUpperCase())}
                           required
                           autoFocus
                         />
-                        <button type="submit" className="primary">
-                          Save
-                        </button>
-                        <button type="button" onClick={() => setEditingDeptId(null)}>
-                          Cancel
-                        </button>
-                        {isMaster && (
-                          <button type="button" className="danger" onClick={(e) => handleDeleteDept(e, c, d)}>
-                            Delete Department
+                        <div className="row">
+                          <button type="submit" className="primary">
+                            Save
                           </button>
-                        )}
+                          <button type="button" onClick={() => setEditingDeptId(null)}>
+                            Cancel
+                          </button>
+                          {isMaster && (
+                            <button type="button" className="danger" onClick={(e) => handleDeleteDept(e, c, d)}>
+                              Delete
+                            </button>
+                          )}
+                        </div>
                         {editDeptError && <p className="error">{editDeptError}</p>}
                       </form>
                     ) : (
-                      <div
-                        key={d.id}
-                        className="list-item"
-                        onClick={() => goToProjects(c, d)}
-                        style={{ cursor: 'pointer' }}
-                      >
-                        <div>
-                          <div className="title">
-                            {d.name} <span className="key-tag">Dept.{d.id}</span>
-                          </div>
-                          <div className="muted">
-                            {d.project_count} project{d.project_count === 1 ? '' : 's'}
-                          </div>
+                      <div key={d.id} className="department-tile">
+                        <div className="title">
+                          {d.name} <span className="key-tag">Dept.{d.id}</span>
                         </div>
-                        <button onClick={(e) => startEditDept(e, d)}>Edit</button>
+                        <div className="muted">
+                          {d.project_count} {d.project_count === 1 ? 'project' : 'projects'}
+                        </div>
+                        <div className="row department-tile-actions">
+                          <button type="button" className="link-button" onClick={() => goToProjects(c, d)}>
+                            View projects →
+                          </button>
+                          <button onClick={(e) => startEditDept(e, d)}>Edit</button>
+                        </div>
                       </div>
                     )
                   )}

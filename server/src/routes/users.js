@@ -37,7 +37,7 @@ async function hiddenByProAdminExclusivity(req, user) {
 }
 
 const USER_COLUMNS =
-  'id, email, first_name, last_name, role, company, department, company_id, department_id, is_master, created_at';
+  'id, email, first_name, last_name, role, company, department, company_id, department_id, is_master, can_view_insights, created_at';
 
 router.get('/', async (req, res, next) => {
   try {
@@ -140,7 +140,7 @@ router.post('/', async (req, res, next) => {
 
     res.status(201).json(
       await get(
-        'SELECT id, email, first_name, last_name, role, company, department, company_id, department_id, is_master, created_at FROM users WHERE id = ?',
+        `SELECT ${USER_COLUMNS} FROM users WHERE id = ?`,
         result.lastInsertRowid
       )
     );
@@ -290,10 +290,43 @@ router.patch('/:id', async (req, res, next) => {
 
     res.json(
       await get(
-        'SELECT id, email, first_name, last_name, role, company, department, company_id, department_id, is_master, created_at FROM users WHERE id = ?',
+        `SELECT ${USER_COLUMNS} FROM users WHERE id = ?`,
         req.params.id
       )
     );
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Master-only switch for whether an account can see Project Insights (and
+// the commencement date). Granting access only makes the option available —
+// each person still turns "Show insights" on for themselves on Projects.
+router.patch('/:id/insights-access', async (req, res, next) => {
+  try {
+    if (!req.user.is_master) {
+      return res.status(403).json({ error: 'only the master account can change insights access' });
+    }
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be true or false' });
+    const user = await get('SELECT * FROM users WHERE id = ?', req.params.id);
+    if (!user) return res.status(404).json({ error: 'user not found' });
+    if (user.is_master) {
+      return res.status(400).json({ error: 'the master account always has insights access' });
+    }
+    await run('UPDATE users SET can_view_insights = ? WHERE id = ?', enabled ? 1 : 0, user.id);
+    if (!!user.can_view_insights !== enabled) {
+      await logAudit({
+        actor: req.user,
+        action: 'updated',
+        entityType: 'user',
+        entityId: user.id,
+        entityName: `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email,
+        details: `insights access ${enabled ? 'granted' : 'removed'}`,
+        snapshot: { before: user },
+      });
+    }
+    res.json(await get(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`, user.id));
   } catch (err) {
     next(err);
   }

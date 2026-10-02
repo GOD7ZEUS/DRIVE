@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { db, get, all, logAudit } from '../db.js';
+import { db, get, all, logAudit, normalizeOrgNameCase } from '../db.js';
 import { pruneAuditLog } from '../auditRetention.js';
 
 const router = Router();
@@ -148,6 +148,9 @@ router.post('/:id/restore', async (req, res, next) => {
     // must not leave a half-restored project behind.
     try {
       await db.batch(statements, 'write');
+      // A snapshot taken before names were forced to capitals can bring a
+      // mixed-case company/department name back with it.
+      await normalizeOrgNameCase();
     } catch (err) {
       const message = describeRestoreFailure(err, tableName);
       if (message) return res.status(409).json({ error: message });

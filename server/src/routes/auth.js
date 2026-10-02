@@ -42,6 +42,7 @@ function publicUser(user) {
     department_id: user.department_id,
     is_master: !!user.is_master,
     has_security_question: !!user.security_question,
+    can_view_insights: !!user.is_master || !!user.can_view_insights,
   };
 }
 

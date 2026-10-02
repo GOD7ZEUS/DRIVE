@@ -37,7 +37,16 @@ router.get('/', async (req, res, next) => {
   try {
     const scope = scopeClause(req);
     let tasks;
-    if (scope) {
+    if (scope && scope.departmentId === null) {
+      // Pro Admin: every department in their one company.
+      tasks = await all(
+        `SELECT tasks.* FROM tasks
+         JOIN projects ON projects.id = tasks.project_id
+         WHERE projects.company_id = ?
+         ORDER BY tasks.created_at DESC`,
+        scope.companyId
+      );
+    } else if (scope) {
       tasks = await all(
         `SELECT tasks.* FROM tasks
          JOIN projects ON projects.id = tasks.project_id

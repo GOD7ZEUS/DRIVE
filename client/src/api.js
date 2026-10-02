@@ -174,6 +174,8 @@ export const api = {
   createUser: (data) => request('/users', { method: 'POST', body: JSON.stringify(data) }),
   updateUser: (id, data) => request(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteUser: (id) => request(`/users/${id}`, { method: 'DELETE' }),
+  setUserInsightsAccess: (id, enabled) =>
+    request(`/users/${id}/insights-access`, { method: 'PATCH', body: JSON.stringify({ enabled }) }),
 
   getCompanies: () => request('/companies'),
   createCompany: (name, is_private) =>

@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
-import { ProjectInsightsPanel } from '../components/ProjectInsights.jsx';
+import { ProjectInsightsPanel, useShowInsightsPreference } from '../components/ProjectInsights.jsx';
 import CompanyDepartmentFields from '../components/CompanyDepartmentFields.jsx';
 import SubDepartmentField from '../components/SubDepartmentField.jsx';
 import { formatUserName } from '../userDisplay.js';
@@ -97,9 +97,23 @@ export default function ProjectDetail() {
   const [taskMilestone, setTaskMilestone] = useState('');
 
   const [insights, setInsights] = useState(null);
+  const canViewInsights = !!user.can_view_insights;
+  const [showInsightsPref, setShowInsightsPref] = useShowInsightsPreference();
+  const insightsOn = canViewInsights && showInsightsPref;
+
+  function loadInsights() {
+    api.getProjectInsights(id).then(setInsights).catch(() => setInsights(null));
+  }
+
+  useEffect(() => {
+    if (insightsOn) loadInsights();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [insightsOn, id]);
 
   function load() {
-    if (user.is_master) api.getProjectInsights(id).then(setInsights).catch(() => setInsights(null));
+    // Refreshed alongside everything else after an edit, so task changes
+    // made on this page show up in the insights straight away.
+    if (insightsOn) loadInsights();
     Promise.all([
       api.getProject(id),
       api.getMilestones(id),
@@ -508,11 +522,16 @@ export default function ProjectDetail() {
         <div className="muted">Last updated {formatDateTime(project.updated_at)}</div>
       </div>
 
-      {user.is_master && (
-        <div className="section">
-          <ProjectInsightsPanel project={project} insights={insights} />
-        </div>
-      )}
+      {canViewInsights &&
+        (insightsOn ? (
+          <div className="section">
+            <ProjectInsightsPanel project={project} insights={insights} onHide={() => setShowInsightsPref(false)} />
+          </div>
+        ) : (
+          <button type="button" className="insights-reveal" onClick={() => setShowInsightsPref(true)}>
+            <span className="countdown-dot" aria-hidden="true" /> Show insights
+          </button>
+        ))}
 
       {showDetails && (
       <>
@@ -721,7 +740,7 @@ export default function ProjectDetail() {
               )}
             </td>
           </tr>
-          {user.is_master && (
+          {canViewInsights && (
             <tr>
               <th>Created</th>
               <td>{formatDateTime(project.created_at)}</td>

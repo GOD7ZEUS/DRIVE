@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { all } from '../db.js';
+import { all, get } from '../db.js';
 import { scopeClause } from '../middleware/auth.js';
 
 const router = Router();
@@ -133,7 +133,7 @@ router.get('/', async (req, res, next) => {
 
     const projectsExceedingTat = await all(
       `${rolloutBaselineCte}
-       SELECT * FROM project_baseline
+       SELECT id, name, status, company, department, tat_deadline, completed_at FROM project_baseline
        WHERE tat_deadline IS NOT NULL
          AND (
            (status = 'completed' AND completed_at IS NOT NULL AND date(completed_at) > date(tat_deadline))
@@ -146,7 +146,7 @@ router.get('/', async (req, res, next) => {
 
     const projectsInTat = await all(
       `${rolloutBaselineCte}
-       SELECT * FROM project_baseline
+       SELECT id, name, status, company, department, tat_deadline, completed_at FROM project_baseline
        WHERE tat_deadline IS NOT NULL
          AND (
            (status = 'completed' AND completed_at IS NOT NULL AND date(completed_at) <= date(tat_deadline))
@@ -157,7 +157,137 @@ router.get('/', async (req, res, next) => {
       ...filterParams
     );
 
+    // ── Advanced dashboard data. Same scoping as everything above. ──────────
+    const currentRollout = `(SELECT rollout_date FROM project_rollout_dates
+      WHERE project_id = projects.id ORDER BY id DESC LIMIT 1)`;
+
+    const milestoneTotals = await get(
+      `SELECT COUNT(*) as total, SUM(CASE WHEN milestones.status = 'done' THEN 1 ELSE 0 END) as done
+       FROM milestones JOIN projects ON projects.id = milestones.project_id
+       WHERE 1=1 ${taskProjectFilter}`,
+      ...filterParams
+    );
+
+    // Open projects bucketed by how close their current rollout date is.
+    const health = await get(
+      `SELECT
+         SUM(CASE WHEN r IS NULL THEN 1 ELSE 0 END) as no_date,
+         SUM(CASE WHEN r < date('now') THEN 1 ELSE 0 END) as overdue,
+         SUM(CASE WHEN r >= date('now') AND r <= date('now', '+14 days') THEN 1 ELSE 0 END) as due_soon,
+         SUM(CASE WHEN r > date('now', '+14 days') THEN 1 ELSE 0 END) as on_track
+       FROM (SELECT ${currentRollout} as r FROM projects WHERE status != 'completed' ${taskProjectFilter})`,
+      ...filterParams
+    );
+
+    // Tasks completed per month over the last 12 months (gaps filled below).
+    const completedRows = await all(
+      `SELECT strftime('%Y-%m', tasks.completed_at) as month, COUNT(*) as count
+       FROM tasks JOIN projects ON projects.id = tasks.project_id
+       WHERE tasks.status = 'done' AND tasks.completed_at >= date('now', 'start of month', '-11 months')
+         ${taskProjectFilter}
+       GROUP BY month`,
+      ...filterParams
+    );
+    const createdRows = await all(
+      `SELECT strftime('%Y-%m', tasks.created_at) as month, COUNT(*) as count
+       FROM tasks JOIN projects ON projects.id = tasks.project_id
+       WHERE tasks.created_at >= date('now', 'start of month', '-11 months') ${taskProjectFilter}
+       GROUP BY month`,
+      ...filterParams
+    );
+
+    // Open projects rolling out in each of the next 6 months.
+    const rolloutRows = await all(
+      `SELECT strftime('%Y-%m', r) as month, COUNT(*) as count
+       FROM (SELECT ${currentRollout} as r FROM projects WHERE status != 'completed' ${taskProjectFilter})
+       WHERE r >= date('now', 'start of month') AND r < date('now', 'start of month', '+6 months')
+       GROUP BY month`,
+      ...filterParams
+    );
+
+    const monthKeys = (startOffset, count) => {
+      const now = new Date();
+      return Array.from({ length: count }, (_, i) => {
+        const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + startOffset + i, 1));
+        return d.toISOString().slice(0, 7);
+      });
+    };
+    const fill = (keys, rows) => {
+      const byMonth = new Map(rows.map((r) => [r.month, r.count]));
+      return keys.map((month) => ({ month, count: byMonth.get(month) || 0 }));
+    };
+    const pastMonths = monthKeys(-11, 12);
+    const taskThroughput = pastMonths.map((month, i) => ({
+      month,
+      created: fill(pastMonths, createdRows)[i].count,
+      completed: fill(pastMonths, completedRows)[i].count,
+    }));
+    const rolloutsByMonth = fill(monthKeys(0, 6), rolloutRows);
+
+    const upcomingRollouts = await all(
+      `SELECT * FROM (
+         SELECT id, name, status, responsible_person, ${currentRollout} as rollout_date
+         FROM projects WHERE status != 'completed' ${taskProjectFilter}
+       )
+       WHERE rollout_date >= date('now') AND rollout_date <= date('now', '+30 days')
+       ORDER BY rollout_date ASC`,
+      ...filterParams
+    );
+
+    // Workload per person: open projects they're responsible for, and the
+    // open/overdue tasks assigned to them. Keyed on the display name, which
+    // is what both columns store alongside the user id.
+    const ownerRows = await all(
+      `SELECT responsible_person as person, COUNT(*) as projects
+       FROM projects WHERE status != 'completed' AND responsible_person != '' ${taskProjectFilter}
+       GROUP BY responsible_person`,
+      ...filterParams
+    );
+    const assigneeRows = await all(
+      `SELECT tasks.assignee as person, COUNT(*) as open_tasks,
+         SUM(CASE WHEN tasks.due_date IS NOT NULL AND tasks.due_date < date('now') THEN 1 ELSE 0 END) as overdue_tasks
+       FROM tasks JOIN projects ON projects.id = tasks.project_id
+       WHERE tasks.status != 'done' AND tasks.assignee != '' ${taskProjectFilter}
+       GROUP BY tasks.assignee`,
+      ...filterParams
+    );
+    const workloadMap = new Map();
+    const entry = (person) => {
+      if (!workloadMap.has(person)) workloadMap.set(person, { person, projects: 0, open_tasks: 0, overdue_tasks: 0 });
+      return workloadMap.get(person);
+    };
+    for (const r of ownerRows) entry(r.person).projects = r.projects;
+    for (const r of assigneeRows) Object.assign(entry(r.person), { open_tasks: r.open_tasks, overdue_tasks: r.overdue_tasks });
+    const workload = [...workloadMap.values()]
+      .sort((a, b) => b.projects + b.open_tasks - (a.projects + a.open_tasks))
+      .slice(0, 10);
+
+    // Project status per company (only interesting when more than one shows).
+    const byCompany = await all(
+      `SELECT company_id, company,
+         SUM(CASE WHEN status = 'planning' THEN 1 ELSE 0 END) as planning,
+         SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active,
+         SUM(CASE WHEN status = 'on_hold' THEN 1 ELSE 0 END) as on_hold,
+         SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+         COUNT(*) as total
+       FROM projects WHERE 1=1 ${taskProjectFilter}
+       GROUP BY company_id ORDER BY total DESC`,
+      ...filterParams
+    );
+
     res.json({
+      milestones: { total: milestoneTotals?.total || 0, done: milestoneTotals?.done || 0 },
+      health: {
+        on_track: health?.on_track || 0,
+        due_soon: health?.due_soon || 0,
+        overdue: health?.overdue || 0,
+        no_date: health?.no_date || 0,
+      },
+      taskThroughput,
+      rolloutsByMonth,
+      upcomingRollouts,
+      workload,
+      byCompany,
       projectsByStatus,
       tasksByStatus,
       overdueTasks,

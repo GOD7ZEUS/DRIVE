@@ -12,7 +12,7 @@ import {
   logAudit,
   describeChanges,
 } from '../db.js';
-import { requireRole, matchesScope, scopeClause, blockedByPrivacy } from '../middleware/auth.js';
+import { requireRole, matchesScope, scopeClause, blockedByPrivacy, canViewInsights } from '../middleware/auth.js';
 import { sendTaskAssignedEmail } from '../notifications.js';
 
 const router = Router();
@@ -21,7 +21,8 @@ const superAdminOnly = requireRole('super_admin', 'pro_admin');
 
 // Every project response goes through here. The plan-lock password hash
 // never leaves the server (scrubbed to a `plan_locked` boolean), and the
-// Project Commencement Date is master-only — stripped server-side for
+// Project Commencement Date goes only to accounts with insights access
+// (master, or anyone master has granted it) — stripped server-side for
 // everyone else, not just hidden in the UI. created_at goes too: it's the
 // same moment for every project made since commencement was added, so
 // leaving it in would hand out the commencement date under another name.
@@ -29,7 +30,7 @@ function toProjectResponse(project, req) {
   if (!project) return project;
   const { plan_lock_hash, commenced_at, created_at, ...rest } = project;
   const response = { ...rest, plan_locked: !!plan_lock_hash };
-  if (req.user.is_master) {
+  if (canViewInsights(req.user)) {
     response.commenced_at = commenced_at;
     response.created_at = created_at;
   }
@@ -94,25 +95,30 @@ function assignableUsersFilter(req) {
   };
 }
 
+// Every project this account may see — the single source of truth for both
+// the project list and the insights built from it. A Pro Admin's scope has
+// departmentId null ("any department in their company"), which must become
+// a company-only filter: `department_id = NULL` matches nothing in SQL.
+function listVisibleProjects(req) {
+  const select = `SELECT projects.*, ${CURRENT_ROLLOUT_DATE_SUBQUERY} FROM projects`;
+  const scope = scopeClause(req);
+  if (scope && scope.departmentId === null) {
+    return all(`${select} WHERE company_id = ? ORDER BY created_at DESC`, scope.companyId);
+  }
+  if (scope) {
+    return all(
+      `${select} WHERE company_id = ? AND department_id = ? ORDER BY created_at DESC`,
+      scope.companyId,
+      scope.departmentId
+    );
+  }
+  if (req.user.is_master) return all(`${select} ORDER BY created_at DESC`);
+  return all(`${select} WHERE ${PRIVATE_COMPANY_EXCLUSION} ORDER BY created_at DESC`);
+}
+
 router.get('/', async (req, res, next) => {
   try {
-    const scope = scopeClause(req);
-    let projects;
-    if (scope) {
-      projects = await all(
-        `SELECT projects.*, ${CURRENT_ROLLOUT_DATE_SUBQUERY} FROM projects
-         WHERE company_id = ? AND department_id = ? ORDER BY created_at DESC`,
-        scope.companyId,
-        scope.departmentId
-      );
-    } else if (req.user.is_master) {
-      projects = await all(`SELECT projects.*, ${CURRENT_ROLLOUT_DATE_SUBQUERY} FROM projects ORDER BY created_at DESC`);
-    } else {
-      projects = await all(
-        `SELECT projects.*, ${CURRENT_ROLLOUT_DATE_SUBQUERY} FROM projects
-         WHERE ${PRIVATE_COMPANY_EXCLUSION} ORDER BY created_at DESC`
-      );
-    }
+    const projects = await listVisibleProjects(req);
     res.json(projects.map((p) => toProjectResponse(p, req)));
   } catch (err) {
     next(err);
@@ -328,15 +334,21 @@ function summarizeTasks(project, tasks) {
   };
 }
 
-const requireMaster = (req, res, next) =>
-  req.user.is_master ? next() : res.status(403).json({ error: 'project insights are only available to the master account' });
+// Master always; anyone else only if master has switched insights on for them.
+const requireInsightsAccess = (req, res, next) =>
+  canViewInsights(req.user)
+    ? next()
+    : res.status(403).json({ error: 'project insights have not been enabled for this account' });
 
-// Compact insights for every project card at once (master sees every
-// project, so there's no scoping to apply here).
-router.get('/insights', requireMaster, async (req, res, next) => {
+// Compact insights for every project card at once — limited to exactly the
+// projects this account can see in its own project list.
+router.get('/insights', requireInsightsAccess, async (req, res, next) => {
   try {
-    const projects = await all('SELECT id, commenced_at, created_at FROM projects');
-    const tasks = await all('SELECT id, project_id, title, status, completed_at, updated_at FROM tasks');
+    const projects = await listVisibleProjects(req);
+    const visibleIds = new Set(projects.map((p) => p.id));
+    const tasks = (await all('SELECT id, project_id, title, status, completed_at, updated_at FROM tasks')).filter((t) =>
+      visibleIds.has(t.project_id)
+    );
     const byProject = new Map();
     for (const t of tasks) {
       if (!byProject.has(t.project_id)) byProject.set(t.project_id, []);
@@ -350,10 +362,12 @@ router.get('/insights', requireMaster, async (req, res, next) => {
   }
 });
 
-router.get('/:id/insights', requireMaster, async (req, res, next) => {
+router.get('/:id/insights', requireInsightsAccess, async (req, res, next) => {
   try {
     const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
-    if (!project) return res.status(404).json({ error: 'project not found' });
+    if (!project || !matchesScope(req, project) || (await blockedByPrivacy(req, project))) {
+      return res.status(404).json({ error: 'project not found' });
+    }
     const tasks = await all(
       'SELECT id, title, status, assignee, due_date, completed_at, created_at, updated_at FROM tasks WHERE project_id = ?',
       project.id

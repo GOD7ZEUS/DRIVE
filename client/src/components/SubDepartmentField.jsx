@@ -59,7 +59,7 @@ export default function SubDepartmentField({ departmentId, value, onChange, init
         <span className="row" style={{ gap: 6 }}>
           <input
             value={value}
-            onChange={(e) => onChange(e.target.value)}
+            onChange={(e) => onChange(e.target.value.toUpperCase())}
             placeholder="New sub-department name"
             autoFocus
           />
