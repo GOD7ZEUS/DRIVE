@@ -50,6 +50,45 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+// Removes entries from the log for good — either the ones picked (`ids`) or
+// every entry (`all: true`). Their snapshots go with them, so a removed
+// entry can no longer be restored. Removals are deliberately not logged
+// themselves: "Remove all" should leave the log empty.
+const MAX_REMOVE_IDS = 1000;
+
+router.post('/remove', async (req, res, next) => {
+  try {
+    if (!req.user.is_master) {
+      return res.status(403).json({ error: 'only the master account can remove activity log entries' });
+    }
+    const { ids, all: removeAll } = req.body ?? {};
+
+    if (removeAll === true) {
+      const result = await db.execute('DELETE FROM audit_log');
+      return res.json({ removed: result.rowsAffected });
+    }
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'pick at least one entry to remove' });
+    }
+    if (ids.length > MAX_REMOVE_IDS) {
+      return res.status(400).json({ error: `at most ${MAX_REMOVE_IDS} entries can be removed at once` });
+    }
+    const cleanIds = [...new Set(ids.map(Number))];
+    if (cleanIds.some((id) => !Number.isInteger(id) || id <= 0)) {
+      return res.status(400).json({ error: 'invalid entry id' });
+    }
+
+    const result = await db.execute({
+      sql: `DELETE FROM audit_log WHERE id IN (${cleanIds.map(() => '?').join(', ')})`,
+      args: cleanIds,
+    });
+    res.json({ removed: result.rowsAffected });
+  } catch (err) {
+    next(err);
+  }
+});
+
 function insertStatement(tableName, row) {
   const keys = Object.keys(row);
   return {

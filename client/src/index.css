@@ -2270,3 +2270,50 @@ form.inline-form {
     flex-wrap: wrap;
   }
 }
+
+/* Activity Log: Select mode turns each entry into a checkbox row. */
+.activity-log-header {
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.activity-log-header h1 {
+  margin-bottom: 0;
+}
+
+.activity-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.activity-entry .activity-entry-info {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.activity-entry.selectable {
+  cursor: pointer;
+  flex-wrap: nowrap;
+}
+
+.activity-entry.selected {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.activity-entry-check {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+@media (max-width: 560px) {
+  .activity-entry.selectable {
+    flex-wrap: wrap;
+  }
+}

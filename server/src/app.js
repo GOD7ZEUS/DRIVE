@@ -68,6 +68,13 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 app.use((err, req, res, next) => {
+  // express.json() rejects malformed or oversized bodies with a 4xx status;
+  // those are the client's mistake, not a server crash.
+  if (err.type && err.status >= 400 && err.status < 500) {
+    return res.status(err.status).json({
+      error: err.type === 'entity.parse.failed' ? 'invalid JSON in request body' : 'request could not be read',
+    });
+  }
   console.error(err);
   res.status(500).json({ error: 'internal server error' });
 });

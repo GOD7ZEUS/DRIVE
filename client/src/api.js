@@ -194,4 +194,8 @@ export const api = {
 
   getAuditLog: () => request('/audit-log'),
   restoreAuditLogEntry: (id) => request(`/audit-log/${id}/restore`, { method: 'POST' }),
+  removeAuditLogEntries: (ids) =>
+    request('/audit-log/remove', { method: 'POST', body: JSON.stringify({ ids }) }),
+  removeAllAuditLogEntries: () =>
+    request('/audit-log/remove', { method: 'POST', body: JSON.stringify({ all: true }) }),
 };
