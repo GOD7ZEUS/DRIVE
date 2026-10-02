@@ -110,9 +110,29 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+// "Assigned By" is optional and only Super Admin (which includes master)
+// can set or change it — it records who handed the project out, so letting
+// the people it was handed to edit it would defeat the point. Returns
+// { user } (null to clear), or { status, error } to reject the request.
+async function resolveAssignedBy(req, assignedByUserId) {
+  if (req.user.role !== 'super_admin') {
+    return { status: 403, error: 'only Super Admin can set who a project was assigned by' };
+  }
+  if (assignedByUserId === null || assignedByUserId === '') return { user: null };
+  const user = await get('SELECT * FROM users WHERE id = ? AND is_master = 0', assignedByUserId);
+  if (!user) return { status: 400, error: 'assigned by must be an existing Drive user' };
+  return { user };
+}
+
 router.post('/', canEdit, async (req, res, next) => {
   try {
     const { name, description = '', status = 'planning', responsible_user_id = null } = req.body;
+    let assignedByUser = null;
+    if (req.body.assigned_by_user_id !== undefined && req.body.assigned_by_user_id !== null && req.body.assigned_by_user_id !== '') {
+      const resolved = await resolveAssignedBy(req, req.body.assigned_by_user_id);
+      if (resolved.error) return res.status(resolved.status).json({ error: resolved.error });
+      assignedByUser = resolved.user;
+    }
     if (!name || !name.trim()) {
       return res.status(400).json({ error: 'name is required' });
     }
@@ -165,8 +185,8 @@ router.post('/', canEdit, async (req, res, next) => {
     }
 
     const result = await run(
-      `INSERT INTO projects (name, description, status, company, department, company_id, department_id, sub_department, sub_department_id, responsible_person, responsible_user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO projects (name, description, status, company, department, company_id, department_id, sub_department, sub_department_id, responsible_person, responsible_user_id, assigned_by, assigned_by_user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       name.trim(),
       description,
       status,
@@ -177,7 +197,9 @@ router.post('/', canEdit, async (req, res, next) => {
       subDepartmentRow.name,
       subDepartmentRow.id,
       responsibleUser ? displayName(responsibleUser) : '',
-      responsibleUser ? responsibleUser.id : null
+      responsibleUser ? responsibleUser.id : null,
+      assignedByUser ? displayName(assignedByUser) : null,
+      assignedByUser ? assignedByUser.id : null
     );
     const project = await get('SELECT * FROM projects WHERE id = ?', result.lastInsertRowid);
     res.status(201).json(stripPlanLock(project));
@@ -346,6 +368,15 @@ router.patch('/:id', canEdit, async (req, res, next) => {
       }
     }
 
+    let assignedByText = project.assigned_by;
+    let newAssignedByUserId = project.assigned_by_user_id;
+    if (req.body.assigned_by_user_id !== undefined) {
+      const resolved = await resolveAssignedBy(req, req.body.assigned_by_user_id);
+      if (resolved.error) return res.status(resolved.status).json({ error: resolved.error });
+      newAssignedByUserId = resolved.user ? resolved.user.id : null;
+      assignedByText = resolved.user ? displayName(resolved.user) : null;
+    }
+
     // Track when a project actually finished (for TAT reporting), separate from
     // updated_at which changes on any edit. Re-opening a completed project
     // clears it, so re-completing it later records a fresh completion date.
@@ -358,7 +389,7 @@ router.patch('/:id', canEdit, async (req, res, next) => {
       `UPDATE projects SET
         name = ?, description = ?, status = ?, responsible_person = ?, responsible_user_id = ?,
         company = ?, department = ?, company_id = ?, department_id = ?, sub_department = ?, sub_department_id = ?,
-        completed_at = ?, updated_at = datetime('now')
+        assigned_by = ?, assigned_by_user_id = ?, completed_at = ?, updated_at = datetime('now')
        WHERE id = ?`,
       name !== undefined ? name.trim() : project.name,
       description !== undefined ? description : project.description,
@@ -371,6 +402,8 @@ router.patch('/:id', canEdit, async (req, res, next) => {
       departmentRow.id,
       subDepartmentRow.name,
       subDepartmentRow.id,
+      assignedByText,
+      newAssignedByUserId,
       completedAt,
       req.params.id
     );
@@ -380,6 +413,7 @@ router.patch('/:id', canEdit, async (req, res, next) => {
       description: description !== undefined ? description : project.description,
       status: status !== undefined ? status : project.status,
       responsible_person: responsiblePersonText,
+      assigned_by: assignedByText,
       company: companyRow.name,
       department: departmentRow.name,
       sub_department: subDepartmentRow.name,
@@ -389,6 +423,7 @@ router.patch('/:id', canEdit, async (req, res, next) => {
       description: 'description',
       status: 'status',
       responsible_person: 'owner',
+      assigned_by: 'assigned by',
       company: 'company',
       department: 'department',
       sub_department: 'sub-department',

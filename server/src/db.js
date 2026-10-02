@@ -196,6 +196,8 @@ await ensureColumn('projects', 'plan_lock_hash', 'TEXT');
 // Holds enough of the entity's prior state (JSON) to actually undo a logged
 // edit or delete — the existing `details` column is just a human-readable
 // one-line summary, not enough to reconstruct anything from.
+await ensureColumn('projects', 'assigned_by_user_id', 'INTEGER REFERENCES users(id)');
+await ensureColumn('projects', 'assigned_by', 'TEXT');
 await ensureColumn('audit_log', 'snapshot', 'TEXT');
 await ensureColumn('audit_log', 'restored_at', 'TEXT');
 

@@ -53,6 +53,8 @@ export default function ProjectDetail() {
   const [savingRollout, setSavingRollout] = useState(false);
 
   const [responsibleUserId, setResponsibleUserId] = useState('');
+  const [assignedByUserId, setAssignedByUserId] = useState('');
+  const canSetAssignedBy = user.role === 'super_admin';
   const [showDetails, setShowDetails] = useState(false);
 
   const [editingDepartment, setEditingDepartment] = useState(false);
@@ -110,6 +112,7 @@ export default function ProjectDetail() {
         setPlans(pl);
         setRolloutDates(rd);
         setResponsibleUserId(p.responsible_user_id || '');
+        setAssignedByUserId(p.assigned_by_user_id || '');
         loadMilestoneAttachments(m);
       })
       .catch((e) => setError(e.message));
@@ -137,7 +140,22 @@ export default function ProjectDetail() {
   async function handleResponsibleUserChange(e) {
     const value = e.target.value;
     setResponsibleUserId(value);
-    await api.updateProject(id, { responsible_user_id: value || null });
+    try {
+      await api.updateProject(id, { responsible_user_id: value || null });
+    } catch (err) {
+      alert(err.message);
+    }
+    load();
+  }
+
+  async function handleAssignedByChange(e) {
+    const value = e.target.value;
+    setAssignedByUserId(value);
+    try {
+      await api.updateProject(id, { assigned_by_user_id: value || null });
+    } catch (err) {
+      alert(err.message);
+    }
     load();
   }
 
@@ -441,23 +459,46 @@ export default function ProjectDetail() {
       </div>
 
       <div className="row-between" style={{ marginBottom: 16 }}>
-        <div className="muted">
-          Owner:{' '}
-          {canEdit ? (
-            <select
-              value={responsibleUserId}
-              onChange={handleResponsibleUserChange}
-              style={{ display: 'inline-block', width: 'auto' }}
-            >
-              <option value="">Unassigned</option>
-              {assignableUsers.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {formatUserName(u)}
-                </option>
-              ))}
-            </select>
-          ) : (
-            project.responsible_person || 'Unassigned'
+        <div className="row">
+          <div className="muted">
+            Owner:{' '}
+            {canEdit ? (
+              <select
+                value={responsibleUserId}
+                onChange={handleResponsibleUserChange}
+                style={{ display: 'inline-block', width: 'auto' }}
+              >
+                <option value="">Unassigned</option>
+                {assignableUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {formatUserName(u)}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              project.responsible_person || 'Unassigned'
+            )}
+          </div>
+          {(canSetAssignedBy || project.assigned_by) && (
+            <div className="muted">
+              Assigned By:{' '}
+              {canSetAssignedBy ? (
+                <select
+                  value={assignedByUserId}
+                  onChange={handleAssignedByChange}
+                  style={{ display: 'inline-block', width: 'auto' }}
+                >
+                  <option value="">Not set</option>
+                  {assignableUsers.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {formatUserName(u)}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                project.assigned_by
+              )}
+            </div>
           )}
         </div>
         <div className="muted">Last updated {formatDateTime(project.updated_at)}</div>

@@ -9,6 +9,42 @@ import { formatUserName } from '../userDisplay.js';
 import { formatDate } from '../dateFormat.js';
 
 const STATUSES = ['planning', 'active', 'on_hold', 'completed'];
+const FILTER_STORAGE_KEY = 'projects.filters';
+const SORT_STORAGE_KEY = 'projects.rolloutSort';
+const NO_FILTERS = { companyId: 'all', departmentId: 'all', userId: 'all', status: 'all' };
+
+function filtersToParams(filters) {
+  const params = {};
+  if (filters.companyId !== 'all') params.companyId = filters.companyId;
+  if (filters.departmentId !== 'all') params.departmentId = filters.departmentId;
+  if (filters.userId !== 'all') params.userId = filters.userId;
+  if (filters.status !== 'all') params.status = filters.status;
+  return params;
+}
+
+// Filters live in the URL (so links from the Companies page still work) and
+// are mirrored to sessionStorage, so opening a project and coming back —
+// via the breadcrumb or the nav bar, which both drop the query string —
+// restores them instead of resetting everything.
+function readInitialFilters(searchParams) {
+  let source = searchParams;
+  const urlHasFilters = Object.keys(NO_FILTERS).some((k) => searchParams.get(k));
+  if (!urlHasFilters) {
+    try {
+      const saved = sessionStorage.getItem(FILTER_STORAGE_KEY);
+      if (saved) source = new URLSearchParams(saved);
+    } catch {
+      // Storage unavailable (e.g. private mode) — just start unfiltered.
+    }
+  }
+  const status = source.get('status');
+  return {
+    companyId: source.get('companyId') || 'all',
+    departmentId: source.get('departmentId') || 'all',
+    userId: source.get('userId') || 'all',
+    status: STATUSES.includes(status) ? status : 'all',
+  };
+}
 
 export default function Projects() {
   const { user } = useAuth();
@@ -18,8 +54,8 @@ export default function Projects() {
   // sees that form at all (canEdit below), so this stays narrow on purpose.
   const canPickCompany = isSuperAdmin || isProAdmin;
   const canEdit = user.role !== 'view';
-  // Company/Department/Sub Department info, the Company filter, and the User
-  // filter are all read-only — nothing here lets a view-only account change
+  // Company/Department/Sub Department info and the Company/Department/User
+  // filters are all read-only — nothing here lets a view-only account change
   // anything, so View gets the same unscoped overview it already has on the
   // dashboard, not just a bare project list.
   const canSeeCompanyInfo = canPickCompany || user.role === 'view';
@@ -31,6 +67,7 @@ export default function Projects() {
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState('planning');
   const [responsibleUserId, setResponsibleUserId] = useState('');
+  const [assignedByUserId, setAssignedByUserId] = useState('');
   const [company, setCompany] = useState('');
   const [department, setDepartment] = useState('');
   const [departmentId, setDepartmentId] = useState(null);
@@ -38,30 +75,14 @@ export default function Projects() {
   const [assignableUsers, setAssignableUsers] = useState([]);
   const [ownDepartments, setOwnDepartments] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [companyFilter, setCompanyFilter] = useState(searchParams.get('companyId') || 'all');
-  const [departmentFilter, setDepartmentFilter] = useState(searchParams.get('departmentId') || 'all');
-  const [userFilter, setUserFilter] = useState(searchParams.get('userId') || 'all');
-  const [statusFilter, setStatusFilter] = useState(() => {
-    const fromUrl = searchParams.get('status');
-    return STATUSES.includes(fromUrl) ? fromUrl : 'all';
-  });
+  const [filters, setFilters] = useState(() => readInitialFilters(searchParams));
   const [rolloutSort, setRolloutSort] = useState(() => {
     try {
-      return localStorage.getItem('projects.rolloutSort') === 'latest' ? 'latest' : 'earliest';
+      return localStorage.getItem(SORT_STORAGE_KEY) === 'latest' ? 'latest' : 'earliest';
     } catch {
       return 'earliest';
     }
   });
-
-  function toggleRolloutSort() {
-    const next = rolloutSort === 'earliest' ? 'latest' : 'earliest';
-    setRolloutSort(next);
-    try {
-      localStorage.setItem('projects.rolloutSort', next);
-    } catch {
-      // Storage can be unavailable (private mode); the toggle still works for this visit.
-    }
-  }
 
   function load() {
     api.getProjects().then(setProjects).catch((e) => setError(e.message));
@@ -69,8 +90,15 @@ export default function Projects() {
 
   useEffect(load, []);
 
+  // If the filters were restored from sessionStorage rather than the URL,
+  // put them back in the URL too, so what's shown and the address match.
+  useEffect(() => {
+    setSearchParams(filtersToParams(filters), { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Fetched unconditionally (not just while the New Project form is open) —
-  // it now also feeds the User filter dropdown below.
+  // it also feeds the Responsible Person filter.
   useEffect(() => {
     api.getAllAssignableUsers().then(setAssignableUsers).catch(() => setAssignableUsers([]));
   }, []);
@@ -80,40 +108,72 @@ export default function Projects() {
     api.getCompanyDepartments(user.company_id).then(setOwnDepartments).catch(() => setOwnDepartments([]));
   }, [showForm, isProAdmin, user.company_id]);
 
+  function updateFilters(patch) {
+    const next = { ...filters, ...patch };
+    setFilters(next);
+    const params = filtersToParams(next);
+    setSearchParams(params, { replace: true });
+    try {
+      sessionStorage.setItem(FILTER_STORAGE_KEY, new URLSearchParams(params).toString());
+    } catch {
+      // Storage unavailable — filters still work, they just won't persist.
+    }
+  }
+
+  function toggleRolloutSort() {
+    const next = rolloutSort === 'earliest' ? 'latest' : 'earliest';
+    setRolloutSort(next);
+    try {
+      localStorage.setItem(SORT_STORAGE_KEY, next);
+    } catch {
+      // Storage unavailable — the toggle still works for this visit.
+    }
+  }
+
   const companies = useMemo(() => {
-    if (!projects) return [];
     const byId = new Map();
-    for (const p of projects) {
+    for (const p of projects || []) {
       if (p.company_id) byId.set(p.company_id, p.company);
     }
     return [...byId.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [projects]);
 
+  // Narrowed to the selected company. With "All companies", department names
+  // can repeat across companies (e.g. Supply Chain Management at both), so
+  // the company is shown alongside to tell them apart.
+  const departments = useMemo(() => {
+    const byId = new Map();
+    for (const p of projects || []) {
+      if (!p.department_id) continue;
+      if (filters.companyId !== 'all' && String(p.company_id) !== filters.companyId) continue;
+      byId.set(p.department_id, filters.companyId === 'all' ? `${p.department} — ${p.company}` : p.department);
+    }
+    return [...byId.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [projects, filters.companyId]);
+
   // Company/department/user scoping only — kept separate from the status
   // filter so the status tabs' own counts reflect "how many would show with
   // the other filters as they are", not collapse to zero against themselves.
-  const companyScopedProjects = useMemo(() => {
+  const scopedProjects = useMemo(() => {
     if (!projects) return [];
     if (!canSeeCompanyInfo) return projects;
     return projects.filter((p) => {
-      if (companyFilter !== 'all' && String(p.company_id) !== companyFilter) return false;
-      if (departmentFilter !== 'all' && String(p.department_id) !== departmentFilter) return false;
-      if (userFilter !== 'all' && String(p.responsible_user_id) !== userFilter) return false;
+      if (filters.companyId !== 'all' && String(p.company_id) !== filters.companyId) return false;
+      if (filters.departmentId !== 'all' && String(p.department_id) !== filters.departmentId) return false;
+      if (filters.userId !== 'all' && String(p.responsible_user_id) !== filters.userId) return false;
       return true;
     });
-  }, [projects, companyFilter, departmentFilter, userFilter, canSeeCompanyInfo]);
+  }, [projects, filters, canSeeCompanyInfo]);
 
   const statusCounts = useMemo(() => {
-    const counts = { all: companyScopedProjects.length };
-    for (const s of STATUSES) counts[s] = companyScopedProjects.filter((p) => p.status === s).length;
+    const counts = { all: scopedProjects.length };
+    for (const s of STATUSES) counts[s] = scopedProjects.filter((p) => p.status === s).length;
     return counts;
-  }, [companyScopedProjects]);
+  }, [scopedProjects]);
 
   const visibleProjects = useMemo(() => {
     const filtered =
-      statusFilter === 'all'
-        ? companyScopedProjects
-        : companyScopedProjects.filter((p) => p.status === statusFilter);
+      filters.status === 'all' ? scopedProjects : scopedProjects.filter((p) => p.status === filters.status);
     // Projects with no rollout date set yet sink to the bottom in either
     // direction, rather than jumping to the top when the order flips.
     const direction = rolloutSort === 'latest' ? -1 : 1;
@@ -123,45 +183,36 @@ export default function Projects() {
       if (!b.current_rollout_date) return -1;
       return direction * a.current_rollout_date.localeCompare(b.current_rollout_date);
     });
-  }, [companyScopedProjects, statusFilter, rolloutSort]);
+  }, [scopedProjects, filters.status, rolloutSort]);
 
-  function handleCompanyFilterChange(value) {
-    setCompanyFilter(value);
-    setDepartmentFilter('all');
-    const next = {};
-    if (value !== 'all') next.companyId = value;
-    if (userFilter !== 'all') next.userId = userFilter;
-    if (statusFilter !== 'all') next.status = statusFilter;
-    setSearchParams(next);
-  }
+  // A restored or hand-typed filter can point at something that's not in the
+  // current list (a deleted department, a link from someone with a wider
+  // view) — the dropdown would then read "All …" while still silently
+  // filtering. Drop any such value once the options are known.
+  useEffect(() => {
+    if (!projects) return;
+    const patch = {};
+    const has = (list, id) => list.some(([optionId]) => String(optionId) === id);
+    if (!canSeeCompanyInfo) {
+      if (filters.companyId !== 'all') patch.companyId = 'all';
+      if (filters.departmentId !== 'all') patch.departmentId = 'all';
+      if (filters.userId !== 'all') patch.userId = 'all';
+    } else {
+      if (filters.companyId !== 'all' && !has(companies, filters.companyId)) patch.companyId = 'all';
+      if (filters.departmentId !== 'all' && !has(departments, filters.departmentId)) patch.departmentId = 'all';
+      if (
+        filters.userId !== 'all' &&
+        assignableUsers.length > 0 &&
+        !assignableUsers.some((u) => String(u.id) === filters.userId)
+      ) {
+        patch.userId = 'all';
+      }
+    }
+    if (Object.keys(patch).length > 0) updateFilters(patch);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projects, companies, departments, assignableUsers, canSeeCompanyInfo]);
 
-  function handleUserFilterChange(value) {
-    setUserFilter(value);
-    const next = {};
-    if (companyFilter !== 'all') next.companyId = companyFilter;
-    if (departmentFilter !== 'all') next.departmentId = departmentFilter;
-    if (value !== 'all') next.userId = value;
-    if (statusFilter !== 'all') next.status = statusFilter;
-    setSearchParams(next);
-  }
-
-  function handleStatusFilterChange(value) {
-    setStatusFilter(value);
-    const next = {};
-    if (companyFilter !== 'all') next.companyId = companyFilter;
-    if (departmentFilter !== 'all') next.departmentId = departmentFilter;
-    if (userFilter !== 'all') next.userId = userFilter;
-    if (value !== 'all') next.status = value;
-    setSearchParams(next);
-  }
-
-  function clearFilter() {
-    setCompanyFilter('all');
-    setDepartmentFilter('all');
-    setUserFilter('all');
-    setStatusFilter('all');
-    setSearchParams({});
-  }
+  const hasActiveFilters = Object.keys(NO_FILTERS).some((k) => filters[k] !== 'all');
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -175,6 +226,9 @@ export default function Projects() {
         status,
         responsible_user_id: responsibleUserId || null,
       };
+      if (isSuperAdmin && assignedByUserId) {
+        payload.assigned_by_user_id = assignedByUserId;
+      }
       if (canPickCompany) {
         payload.company = company;
         payload.department = department;
@@ -187,11 +241,11 @@ export default function Projects() {
       setDescription('');
       setStatus('planning');
       setResponsibleUserId('');
+      setAssignedByUserId('');
       setCompany('');
       setDepartment('');
       setDepartmentId(null);
       setSubDepartment('');
-      setAssignableUsers([]);
       setShowForm(false);
       load();
     } catch (e) {
@@ -201,81 +255,16 @@ export default function Projects() {
     }
   }
 
-  const filteredDepartmentName =
-    departmentFilter !== 'all' ? projects?.find((p) => String(p.department_id) === departmentFilter)?.department : null;
-
   return (
     <div>
-      <div className="row-between">
+      <div className="row-between page-header">
         <h1>Projects</h1>
-        <div className="row">
-          {canSeeCompanyInfo && projects && projects.length > 0 && (
-            <select value={companyFilter} onChange={(e) => handleCompanyFilterChange(e.target.value)}>
-              <option value="all">All companies</option>
-              {companies.map(([id, name]) => (
-                <option key={id} value={id}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          )}
-          {canSeeCompanyInfo && assignableUsers.length > 0 && (
-            <select value={userFilter} onChange={(e) => handleUserFilterChange(e.target.value)}>
-              <option value="all">All users</option>
-              {assignableUsers.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {formatUserName(u)}
-                </option>
-              ))}
-            </select>
-          )}
-          {projects && projects.length > 0 && (
-            <button
-              type="button"
-              onClick={toggleRolloutSort}
-              title="Sort by rollout date — click to flip the order"
-            >
-              Rollout: {rolloutSort === 'earliest' ? '↑ Earliest first' : '↓ Latest first'}
-            </button>
-          )}
-          {canEdit && (
-            <button className="primary" onClick={() => setShowForm((s) => !s)}>
-              {showForm ? 'Cancel' : 'New Project'}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {projects && projects.length > 0 && (
-        <div className="status-tabs">
-          <button
-            type="button"
-            className={statusFilter === 'all' ? 'active' : ''}
-            onClick={() => handleStatusFilterChange('all')}
-          >
-            All <span className="muted">({statusCounts.all})</span>
+        {canEdit && (
+          <button className="primary" onClick={() => setShowForm((s) => !s)}>
+            {showForm ? 'Cancel' : 'New Project'}
           </button>
-          {STATUSES.map((s) => (
-            <button
-              key={s}
-              type="button"
-              className={statusFilter === s ? 'active' : ''}
-              onClick={() => handleStatusFilterChange(s)}
-            >
-              {STATUS_LABELS[s]} <span className="muted">({statusCounts[s]})</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {canSeeCompanyInfo && departmentFilter !== 'all' && filteredDepartmentName && (
-        <p className="muted" style={{ marginBottom: 12 }}>
-          Filtered to department <strong>{filteredDepartmentName}</strong> ·{' '}
-          <a href="#" onClick={(e) => { e.preventDefault(); clearFilter(); }}>
-            clear
-          </a>
-        </p>
-      )}
+        )}
+      </div>
 
       {canEdit && showForm && (
         <form className="panel form-grid" onSubmit={handleSubmit} style={{ marginBottom: 20 }}>
@@ -295,7 +284,7 @@ export default function Projects() {
             <select value={status} onChange={(e) => setStatus(e.target.value)}>
               {STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {s}
+                  {STATUS_LABELS[s]}
                 </option>
               ))}
             </select>
@@ -312,6 +301,20 @@ export default function Projects() {
               ))}
             </select>
           </label>
+          {isSuperAdmin && (
+            <label>
+              Assigned By <span className="muted">(optional)</span>
+              <br />
+              <select value={assignedByUserId} onChange={(e) => setAssignedByUserId(e.target.value)}>
+                <option value="">Not set</option>
+                {assignableUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {formatUserName(u)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {isSuperAdmin ? (
             <>
               <CompanyDepartmentFields
@@ -370,11 +373,92 @@ export default function Projects() {
         </form>
       )}
 
-      {error && <p className="error">{error}</p>}
+      {projects && projects.length > 0 && (
+        <>
+          <div className="panel projects-toolbar">
+            {canSeeCompanyInfo && (
+              <>
+                <label className="filter-group">
+                  <span className="muted">Company</span>
+                  <select
+                    value={filters.companyId}
+                    onChange={(e) => updateFilters({ companyId: e.target.value, departmentId: 'all' })}
+                  >
+                    <option value="all">All companies</option>
+                    {companies.map(([id, label]) => (
+                      <option key={id} value={id}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="filter-group">
+                  <span className="muted">Department</span>
+                  <select
+                    value={filters.departmentId}
+                    onChange={(e) => updateFilters({ departmentId: e.target.value })}
+                  >
+                    <option value="all">All departments</option>
+                    {departments.map(([id, label]) => (
+                      <option key={id} value={id}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="filter-group">
+                  <span className="muted">Responsible Person</span>
+                  <select value={filters.userId} onChange={(e) => updateFilters({ userId: e.target.value })}>
+                    <option value="all">All users</option>
+                    {assignableUsers.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {formatUserName(u)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            )}
+            <div className="filter-group">
+              <span className="muted">Rollout Date</span>
+              <button type="button" onClick={toggleRolloutSort} title="Click to flip the order">
+                {rolloutSort === 'earliest' ? '↑ Earliest first' : '↓ Latest first'}
+              </button>
+            </div>
+            {hasActiveFilters && (
+              <button type="button" className="clear-filters" onClick={() => updateFilters(NO_FILTERS)}>
+                Clear filters
+              </button>
+            )}
+          </div>
+
+          <div className="status-tabs">
+            <button
+              type="button"
+              className={filters.status === 'all' ? 'active' : ''}
+              onClick={() => updateFilters({ status: 'all' })}
+            >
+              All <span className="muted">({statusCounts.all})</span>
+            </button>
+            {STATUSES.map((s) => (
+              <button
+                key={s}
+                type="button"
+                className={filters.status === s ? 'active' : ''}
+                onClick={() => updateFilters({ status: s })}
+              >
+                {STATUS_LABELS[s]} <span className="muted">({statusCounts[s]})</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {error && !showForm && <p className="error">{error}</p>}
       {!projects && !error && <p className="muted">Loading…</p>}
       {projects && projects.length === 0 && <p className="muted">No projects yet.</p>}
       {projects && projects.length > 0 && visibleProjects.length === 0 && (
-        <p className="muted">No projects match this filter.</p>
+        <p className="muted">No projects match these filters.</p>
       )}
 
       <div className="list">
@@ -403,6 +487,9 @@ export default function Projects() {
               )}
               {p.responsible_person && (
                 <div className="muted project-owner">RESP: {p.responsible_person}</div>
+              )}
+              {p.assigned_by && (
+                <div className="muted project-owner">Assigned By: {p.assigned_by}</div>
               )}
             </div>
           </Link>

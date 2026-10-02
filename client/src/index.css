@@ -138,7 +138,7 @@ a {
 }
 
 .app {
-  max-width: 1100px;
+  max-width: 1440px;
   margin: 0 auto;
   min-height: 100svh;
   display: flex;
@@ -684,11 +684,42 @@ a.list-item:hover {
   flex-wrap: wrap;
 }
 
+.page-header {
+  margin-bottom: 18px;
+}
+
+.page-header h1 {
+  margin: 0;
+}
+
+/* Projects filter bar: each filter is a labelled column, wrapping onto a
+   new line on narrow screens instead of squeezing into the page title. */
+.projects-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px 18px;
+  margin-bottom: 18px;
+  padding: 14px 18px;
+}
+
+.projects-toolbar .filter-group select {
+  min-width: 200px;
+}
+
+.projects-toolbar .clear-filters {
+  margin-left: auto;
+  background: none;
+  border-color: transparent;
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .status-tabs {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
 .status-tabs button {
@@ -853,6 +884,16 @@ form.inline-form {
 
   .form-grid {
     max-width: 100%;
+  }
+
+  .projects-toolbar .filter-group,
+  .projects-toolbar .filter-group select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .projects-toolbar .clear-filters {
+    margin-left: 0;
   }
 }
 
