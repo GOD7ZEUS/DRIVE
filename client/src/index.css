@@ -657,6 +657,25 @@ a.list-item:hover {
   border-radius: 999px;
 }
 
+/* With a mouse, the scrollbar only appears while the cursor is on that card. */
+@media (hover: hover) {
+  .project-row .project-description {
+    scrollbar-color: transparent transparent;
+  }
+
+  .project-row .project-description::-webkit-scrollbar-thumb {
+    background: transparent;
+  }
+
+  .project-row:hover .project-description {
+    scrollbar-color: var(--border) transparent;
+  }
+
+  .project-row:hover .project-description::-webkit-scrollbar-thumb {
+    background: var(--border);
+  }
+}
+
 @media (min-width: 861px) {
   .project-row {
     height: 240px;
