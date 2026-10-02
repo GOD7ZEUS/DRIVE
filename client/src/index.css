@@ -7,6 +7,7 @@
   --accent: #6d4bff;
   --accent-2: #9333ea;
   --accent-bg: rgba(109, 75, 255, 0.1);
+  --chart-line: #6d4bff;
   --shadow-sm: 0 1px 2px rgba(20, 10, 40, 0.04), 0 1px 3px rgba(20, 10, 40, 0.03);
   --shadow-md: 0 4px 14px rgba(20, 10, 40, 0.06), 0 2px 6px rgba(20, 10, 40, 0.04);
   --shadow-lg: 0 16px 40px rgba(20, 10, 40, 0.12), 0 4px 12px rgba(20, 10, 40, 0.06);
@@ -39,6 +40,7 @@
     --accent: #a78bfa;
     --accent-2: #d8b4fe;
     --accent-bg: rgba(167, 139, 250, 0.15);
+  --chart-line: #9478f5;
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25), 0 1px 3px rgba(0, 0, 0, 0.2);
     --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.25);
     --shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.5), 0 6px 16px rgba(0, 0, 0, 0.3);
@@ -54,6 +56,7 @@
   --accent: #a78bfa;
   --accent-2: #d8b4fe;
   --accent-bg: rgba(167, 139, 250, 0.15);
+  --chart-line: #9478f5;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25), 0 1px 3px rgba(0, 0, 0, 0.2);
   --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.25);
   --shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.5), 0 6px 16px rgba(0, 0, 0, 0.3);
@@ -68,6 +71,7 @@
   --accent: #6d4bff;
   --accent-2: #9333ea;
   --accent-bg: rgba(109, 75, 255, 0.1);
+  --chart-line: #6d4bff;
   --shadow-sm: 0 1px 2px rgba(20, 10, 40, 0.04), 0 1px 3px rgba(20, 10, 40, 0.03);
   --shadow-md: 0 4px 14px rgba(20, 10, 40, 0.06), 0 2px 6px rgba(20, 10, 40, 0.04);
   --shadow-lg: 0 16px 40px rgba(20, 10, 40, 0.12), 0 4px 12px rgba(20, 10, 40, 0.06);
@@ -692,27 +696,584 @@ a.list-item:hover {
   margin: 0;
 }
 
-/* Projects filter bar: each filter is a labelled column, wrapping onto a
-   new line on narrow screens instead of squeezing into the page title. */
-.projects-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 14px 18px;
-  margin-bottom: 18px;
-  padding: 14px 18px;
+.page-actions {
+  justify-content: flex-end;
 }
 
-.projects-toolbar .filter-group select {
-  min-width: 200px;
-}
-
-.projects-toolbar .clear-filters {
-  margin-left: auto;
+.link-button {
   background: none;
   border-color: transparent;
   color: var(--accent);
   font-weight: 600;
+  padding: 6px 4px;
+}
+
+.link-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ── Projects filter popover: opens from the Filters button, top right,
+   with the filters stacked vertically. */
+.filters-anchor {
+  position: relative;
+}
+
+.filters-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.filters-button.has-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.filters-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.filters-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: 320px;
+  max-width: calc(100vw - 28px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  animation: fadeSlideIn 0.16s ease;
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.filter-field > .muted,
+.filter-dates legend,
+.filter-dates label .muted {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.filter-field select,
+.filter-dates input {
+  width: 100%;
+}
+
+.filter-dates {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 10px;
+}
+
+.filter-dates legend {
+  padding: 0;
+  margin-bottom: 6px;
+}
+
+.filter-dates label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filter-dates .error {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.filters-popover-footer {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: -8px 0 18px;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 12px;
+  border-radius: 999px;
+  background: var(--accent-bg);
+  color: var(--text-h);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.filter-chip button {
+  border: 0;
+  background: none;
+  padding: 0 6px;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text);
+}
+
+/* ── Master-only insights on each project card — a fixed-width column so
+   the card doesn't grow, sitting between the description and the status
+   pills. */
+.card-insights {
+  flex: 0 0 196px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 0 2px 16px;
+  border-left: 1px solid var(--border);
+  font-size: 12px;
+  min-width: 0;
+}
+
+.card-insights-span,
+.card-insights-trend {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.card-insights .muted {
+  font-size: 12px;
+}
+
+.card-insights strong {
+  color: var(--text-h);
+}
+
+.card-insights-empty {
+  padding: 8px 0;
+}
+
+.card-insights-last {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.card-insights-last-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-h);
+}
+
+/* Countdown: a pulsing dot carries the "live" feel; the state is always
+   spelled out in the text, so the color never stands alone. */
+.countdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-h);
+}
+
+.countdown-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-completed);
+  flex-shrink: 0;
+  animation: countdown-blink 1.6s ease-in-out infinite;
+}
+
+.countdown-soon .countdown-dot,
+.countdown-today .countdown-dot {
+  background: var(--status-on_hold);
+  animation-duration: 1s;
+}
+
+.countdown-overdue .countdown-dot {
+  background: var(--danger);
+  animation-duration: 0.8s;
+}
+
+.countdown-overdue {
+  color: var(--danger);
+}
+
+.countdown-completed .countdown-dot,
+.countdown-no-date .countdown-dot {
+  background: var(--status-planning);
+  animation: none;
+}
+
+@keyframes countdown-blink {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 0%, transparent);
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .countdown-dot {
+    animation: none !important;
+  }
+}
+
+.span-meter {
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--status-completed) 18%, transparent);
+  overflow: hidden;
+}
+
+.span-meter-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--status-completed);
+}
+
+.span-meter-soon,
+.span-meter-today {
+  background: color-mix(in srgb, var(--status-on_hold) 18%, transparent);
+}
+
+.span-meter-soon .span-meter-fill,
+.span-meter-today .span-meter-fill {
+  background: var(--status-on_hold);
+}
+
+.span-meter-overdue {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+}
+
+.span-meter-overdue .span-meter-fill {
+  background: var(--danger);
+}
+
+.span-meter-completed {
+  background: color-mix(in srgb, var(--status-planning) 18%, transparent);
+}
+
+.span-meter-completed .span-meter-fill {
+  background: var(--status-planning);
+}
+
+/* ── Chart marks (shared by the card sparkline and the project trend). */
+.chart-line {
+  fill: none;
+  stroke: var(--chart-line);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chart-area {
+  fill: var(--chart-line);
+  opacity: 0.1;
+}
+
+.chart-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.chart-dot {
+  fill: var(--chart-line);
+  stroke: var(--panel);
+  stroke-width: 2;
+}
+
+.chart-hit {
+  fill: transparent;
+}
+
+.chart-tick {
+  fill: var(--text);
+  opacity: 0.75;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-end-label {
+  fill: var(--text-h);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.chart-crosshair {
+  stroke: var(--text);
+  stroke-width: 1;
+  opacity: 0.35;
+}
+
+.sparkline {
+  display: block;
+  max-width: 100%;
+  overflow: visible;
+}
+
+.trend-chart {
+  position: relative;
+}
+
+.trend-chart svg {
+  display: block;
+  outline-offset: 2px;
+}
+
+.chart-tooltip {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  pointer-events: none;
+  white-space: nowrap;
+  padding: 6px 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.chart-tooltip strong {
+  color: var(--text-h);
+  font-size: 14px;
+}
+
+/* ── Project page: Project Insights panel (master only). */
+.insights-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.insights-panel h2 {
+  margin: 0;
+}
+
+.insights-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.insights-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.insights-tile > .muted:first-child {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.insights-tile strong {
+  font-size: 20px;
+  color: var(--text-h);
+}
+
+.insights-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 12px;
+}
+
+.insights-grid:last-child {
+  grid-template-columns: 1fr 1fr;
+}
+
+.insights-card {
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.insights-card h3 {
+  font-size: 14px;
+  margin: 0 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.insights-caption {
+  margin: -4px 0 10px;
+  font-size: 12px;
+}
+
+.insights-subhead {
+  margin-top: 16px !important;
+}
+
+.insights-data {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.insights-data summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.insights-data table {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.insights-data th,
+.insights-data td {
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.status-meter {
+  display: flex;
+  gap: 2px;
+  height: 12px;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.status-meter-seg {
+  min-width: 4px;
+}
+
+.status-meter-todo {
+  background: var(--status-todo);
+}
+
+.status-meter-in_progress {
+  background: var(--status-in_progress);
+}
+
+.status-meter-done {
+  background: var(--status-done);
+}
+
+.status-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 13px;
+}
+
+.status-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-legend strong {
+  color: var(--text-h);
+}
+
+.status-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.insights-task {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.insights-task:last-child {
+  border-bottom: 0;
+}
+
+.insights-task-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.badge-overdue {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+@media (max-width: 860px) {
+  .project-row {
+    flex-wrap: wrap;
+  }
+
+  .project-row .list-item-info {
+    flex-basis: calc(100% - 180px);
+  }
+
+  .card-insights {
+    order: 3;
+    flex: 1 1 100%;
+    padding: 12px 0 0;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .project-row .project-status-col {
+    flex: 1 1 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .insights-grid,
+  .insights-grid:last-child {
+    grid-template-columns: 1fr;
+  }
 }
 
 .status-tabs {
@@ -886,14 +1447,8 @@ form.inline-form {
     max-width: 100%;
   }
 
-  .projects-toolbar .filter-group,
-  .projects-toolbar .filter-group select {
-    width: 100%;
-    min-width: 0;
-  }
-
-  .projects-toolbar .clear-filters {
-    margin-left: 0;
+  .page-header {
+    flex-wrap: wrap;
   }
 }
 

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
+import { ProjectInsightsPanel } from '../components/ProjectInsights.jsx';
 import CompanyDepartmentFields from '../components/CompanyDepartmentFields.jsx';
 import SubDepartmentField from '../components/SubDepartmentField.jsx';
 import { formatUserName } from '../userDisplay.js';
@@ -95,7 +96,10 @@ export default function ProjectDetail() {
   const [taskDue, setTaskDue] = useState('');
   const [taskMilestone, setTaskMilestone] = useState('');
 
+  const [insights, setInsights] = useState(null);
+
   function load() {
+    if (user.is_master) api.getProjectInsights(id).then(setInsights).catch(() => setInsights(null));
     Promise.all([
       api.getProject(id),
       api.getMilestones(id),
@@ -504,6 +508,12 @@ export default function ProjectDetail() {
         <div className="muted">Last updated {formatDateTime(project.updated_at)}</div>
       </div>
 
+      {user.is_master && (
+        <div className="section">
+          <ProjectInsightsPanel project={project} insights={insights} />
+        </div>
+      )}
+
       {showDetails && (
       <>
       <table className="detail-table">
@@ -711,10 +721,12 @@ export default function ProjectDetail() {
               )}
             </td>
           </tr>
-          <tr>
-            <th>Created</th>
-            <td>{formatDateTime(project.created_at)}</td>
-          </tr>
+          {user.is_master && (
+            <tr>
+              <th>Created</th>
+              <td>{formatDateTime(project.created_at)}</td>
+            </tr>
+          )}
         </tbody>
       </table>
 

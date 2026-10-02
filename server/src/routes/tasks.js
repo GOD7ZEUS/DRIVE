@@ -108,10 +108,17 @@ router.patch('/:id', canEdit, async (req, res, next) => {
     const dueDateChanged = due_date !== undefined && due_date !== task.due_date;
     const reminderSent = assignee_user_id !== undefined || dueDateChanged ? 0 : task.reminder_sent;
 
+    // Stamped on the move to done and cleared on reopening, so re-completing
+    // later records the fresh date — same shape as a project's completed_at.
+    let completedAt = task.completed_at;
+    if (status !== undefined && status !== task.status) {
+      completedAt = status === 'done' ? new Date().toISOString().slice(0, 19).replace('T', ' ') : null;
+    }
+
     await run(
       `UPDATE tasks SET
         title = ?, description = ?, assignee = ?, assignee_user_id = ?, status = ?, due_date = ?,
-        milestone_id = ?, reminder_sent = ?, updated_at = datetime('now')
+        milestone_id = ?, reminder_sent = ?, completed_at = ?, updated_at = datetime('now')
        WHERE id = ?`,
       title !== undefined ? title : task.title,
       description !== undefined ? description : task.description,
@@ -121,6 +128,7 @@ router.patch('/:id', canEdit, async (req, res, next) => {
       due_date !== undefined ? due_date : task.due_date,
       milestone_id !== undefined ? milestone_id : task.milestone_id,
       reminderSent,
+      completedAt,
       req.params.id
     );
 

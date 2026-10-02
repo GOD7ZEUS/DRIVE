@@ -198,6 +198,23 @@ await ensureColumn('projects', 'plan_lock_hash', 'TEXT');
 // one-line summary, not enough to reconstruct anything from.
 await ensureColumn('projects', 'assigned_by_user_id', 'INTEGER REFERENCES users(id)');
 await ensureColumn('projects', 'assigned_by', 'TEXT');
+// Project Commencement Date: stamped automatically when a project is created.
+// Projects that predate the column start from their original creation time.
+await ensureColumn('projects', 'commenced_at', 'TEXT');
+await db.execute('UPDATE projects SET commenced_at = created_at WHERE commenced_at IS NULL');
+// When a task was marked done — feeds the master-only insights trend. Tasks
+// already done before this column existed are backfilled from their own
+// "Status changed ... to done" system comment (latest one wins), falling back
+// to the task's last update time if that comment is missing.
+await ensureColumn('tasks', 'completed_at', 'TEXT');
+await db.execute(`
+  UPDATE tasks SET completed_at = COALESCE(
+    (SELECT MAX(created_at) FROM comments
+      WHERE comments.task_id = tasks.id AND author = 'system' AND body LIKE '%to "done"'),
+    updated_at
+  )
+  WHERE status = 'done' AND completed_at IS NULL
+`);
 await ensureColumn('audit_log', 'snapshot', 'TEXT');
 await ensureColumn('audit_log', 'restored_at', 'TEXT');
 

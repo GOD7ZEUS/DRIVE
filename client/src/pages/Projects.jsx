@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import StatusBadge, { STATUS_LABELS } from '../components/StatusBadge.jsx';
+import { CardInsights, commencementDate } from '../components/ProjectInsights.jsx';
 import CompanyDepartmentFields from '../components/CompanyDepartmentFields.jsx';
 import SubDepartmentField from '../components/SubDepartmentField.jsx';
 import { formatUserName } from '../userDisplay.js';
@@ -11,7 +12,8 @@ import { formatDate } from '../dateFormat.js';
 const STATUSES = ['planning', 'active', 'on_hold', 'completed'];
 const FILTER_STORAGE_KEY = 'projects.filters';
 const SORT_STORAGE_KEY = 'projects.rolloutSort';
-const NO_FILTERS = { companyId: 'all', departmentId: 'all', userId: 'all', status: 'all' };
+const NO_FILTERS = { companyId: 'all', departmentId: 'all', userId: 'all', status: 'all', from: '', to: '' };
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function filtersToParams(filters) {
   const params = {};
@@ -19,6 +21,8 @@ function filtersToParams(filters) {
   if (filters.departmentId !== 'all') params.departmentId = filters.departmentId;
   if (filters.userId !== 'all') params.userId = filters.userId;
   if (filters.status !== 'all') params.status = filters.status;
+  if (filters.from) params.from = filters.from;
+  if (filters.to) params.to = filters.to;
   return params;
 }
 
@@ -38,11 +42,15 @@ function readInitialFilters(searchParams) {
     }
   }
   const status = source.get('status');
+  const from = source.get('from') || '';
+  const to = source.get('to') || '';
   return {
     companyId: source.get('companyId') || 'all',
     departmentId: source.get('departmentId') || 'all',
     userId: source.get('userId') || 'all',
     status: STATUSES.includes(status) ? status : 'all',
+    from: ISO_DATE.test(from) ? from : '',
+    to: ISO_DATE.test(to) ? to : '',
   };
 }
 
@@ -84,11 +92,33 @@ export default function Projects() {
     }
   });
 
+  const isMaster = !!user.is_master;
+  const [insights, setInsights] = useState({});
+  const [showFilters, setShowFilters] = useState(false);
+  const filtersRef = useRef(null);
+
   function load() {
     api.getProjects().then(setProjects).catch((e) => setError(e.message));
+    if (isMaster) api.getProjectsInsights().then(setInsights).catch(() => setInsights({}));
   }
 
   useEffect(load, []);
+
+  useEffect(() => {
+    if (!showFilters) return undefined;
+    const onPointerDown = (e) => {
+      if (filtersRef.current && !filtersRef.current.contains(e.target)) setShowFilters(false);
+    };
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setShowFilters(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [showFilters]);
 
   // If the filters were restored from sessionStorage rather than the URL,
   // put them back in the URL too, so what's shown and the address match.
@@ -156,11 +186,20 @@ export default function Projects() {
   // the other filters as they are", not collapse to zero against themselves.
   const scopedProjects = useMemo(() => {
     if (!projects) return [];
-    if (!canSeeCompanyInfo) return projects;
     return projects.filter((p) => {
-      if (filters.companyId !== 'all' && String(p.company_id) !== filters.companyId) return false;
-      if (filters.departmentId !== 'all' && String(p.department_id) !== filters.departmentId) return false;
-      if (filters.userId !== 'all' && String(p.responsible_user_id) !== filters.userId) return false;
+      if (canSeeCompanyInfo) {
+        if (filters.companyId !== 'all' && String(p.company_id) !== filters.companyId) return false;
+        if (filters.departmentId !== 'all' && String(p.department_id) !== filters.departmentId) return false;
+        if (filters.userId !== 'all' && String(p.responsible_user_id) !== filters.userId) return false;
+      }
+      // Rollout window, both ends inclusive. Once either end is set, projects
+      // with no rollout date can't fall inside it, so they're left out.
+      if (filters.from || filters.to) {
+        const date = p.current_rollout_date;
+        if (!date) return false;
+        if (filters.from && date < filters.from) return false;
+        if (filters.to && date > filters.to) return false;
+      }
       return true;
     });
   }, [projects, filters, canSeeCompanyInfo]);
@@ -212,7 +251,36 @@ export default function Projects() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projects, companies, departments, assignableUsers, canSeeCompanyInfo]);
 
-  const hasActiveFilters = Object.keys(NO_FILTERS).some((k) => filters[k] !== 'all');
+  // The status tabs are always on screen, so they don't count toward the
+  // Filters badge — only what's tucked inside the popover does.
+  const popoverFilterKeys = ['companyId', 'departmentId', 'userId', 'from', 'to'];
+  const activeFilterCount =
+    popoverFilterKeys.filter((k) => k !== 'to' && filters[k] !== NO_FILTERS[k]).length +
+    (filters.to && !filters.from ? 1 : 0);
+  const hasActiveFilters = Object.keys(NO_FILTERS).some((k) => filters[k] !== NO_FILTERS[k]);
+
+  // Chips under the status tabs, so what's filtered stays visible with the
+  // popover closed. Each one clears just itself.
+  const labelFor = (list, id) => list.find(([optionId]) => String(optionId) === id)?.[1] ?? id;
+  const activeChips = [];
+  if (filters.companyId !== 'all') {
+    activeChips.push({ key: 'company', label: 'Company', value: labelFor(companies, filters.companyId), clear: { companyId: 'all', departmentId: 'all' } });
+  }
+  if (filters.departmentId !== 'all') {
+    activeChips.push({ key: 'department', label: 'Department', value: labelFor(departments, filters.departmentId), clear: { departmentId: 'all' } });
+  }
+  if (filters.userId !== 'all') {
+    const u = assignableUsers.find((au) => String(au.id) === filters.userId);
+    activeChips.push({ key: 'user', label: 'Responsible', value: u ? formatUserName(u) : '…', clear: { userId: 'all' } });
+  }
+  if (filters.from || filters.to) {
+    const value = filters.from && filters.to
+      ? `${formatDate(filters.from)} – ${formatDate(filters.to)}`
+      : filters.from
+        ? `from ${formatDate(filters.from)}`
+        : `until ${formatDate(filters.to)}`;
+    activeChips.push({ key: 'dates', label: 'Rollout', value, clear: { from: '', to: '' } });
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -259,11 +327,125 @@ export default function Projects() {
     <div>
       <div className="row-between page-header">
         <h1>Projects</h1>
-        {canEdit && (
-          <button className="primary" onClick={() => setShowForm((s) => !s)}>
-            {showForm ? 'Cancel' : 'New Project'}
-          </button>
-        )}
+        <div className="row page-actions">
+          {projects && projects.length > 0 && (
+            <>
+              <button type="button" onClick={toggleRolloutSort} title="Sort by rollout date — click to flip">
+                {rolloutSort === 'earliest' ? '↑ Earliest rollout' : '↓ Latest rollout'}
+              </button>
+              <div className="filters-anchor" ref={filtersRef}>
+                <button
+                  type="button"
+                  className={`filters-button${activeFilterCount ? ' has-active' : ''}`}
+                  aria-expanded={showFilters}
+                  aria-controls="project-filters"
+                  onClick={() => setShowFilters((s) => !s)}
+                >
+                  <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M1.5 3h13l-5 6v4.5l-3 1.5V9z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+                  </svg>
+                  Filters
+                  {activeFilterCount > 0 && <span className="filters-count">{activeFilterCount}</span>}
+                </button>
+                {showFilters && (
+                  <div className="filters-popover" id="project-filters" role="dialog" aria-label="Project filters">
+                    <div className="row-between">
+                      <strong>Filters</strong>
+                      <button type="button" className="icon-button" aria-label="Close filters" onClick={() => setShowFilters(false)}>
+                        ×
+                      </button>
+                    </div>
+                    {canSeeCompanyInfo && (
+                      <>
+                        <label className="filter-field">
+                          <span className="muted">Company</span>
+                          <select
+                            value={filters.companyId}
+                            onChange={(e) => updateFilters({ companyId: e.target.value, departmentId: 'all' })}
+                          >
+                            <option value="all">All companies</option>
+                            {companies.map(([id, label]) => (
+                              <option key={id} value={id}>
+                                {label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="filter-field">
+                          <span className="muted">Department</span>
+                          <select
+                            value={filters.departmentId}
+                            onChange={(e) => updateFilters({ departmentId: e.target.value })}
+                          >
+                            <option value="all">All departments</option>
+                            {departments.map(([id, label]) => (
+                              <option key={id} value={id}>
+                                {label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="filter-field">
+                          <span className="muted">Responsible Person</span>
+                          <select value={filters.userId} onChange={(e) => updateFilters({ userId: e.target.value })}>
+                            <option value="all">All users</option>
+                            {assignableUsers.map((u) => (
+                              <option key={u.id} value={u.id}>
+                                {formatUserName(u)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </>
+                    )}
+                    <fieldset className="filter-field filter-dates">
+                      <legend className="muted">Rollout date between</legend>
+                      <label>
+                        <span className="muted">Start date</span>
+                        <input
+                          type="date"
+                          value={filters.from}
+                          max={filters.to || undefined}
+                          onChange={(e) => updateFilters({ from: e.target.value })}
+                        />
+                      </label>
+                      <label>
+                        <span className="muted">End date</span>
+                        <input
+                          type="date"
+                          value={filters.to}
+                          min={filters.from || undefined}
+                          onChange={(e) => updateFilters({ to: e.target.value })}
+                        />
+                      </label>
+                      {filters.from && filters.to && filters.from > filters.to && (
+                        <p className="error">Start date is after end date.</p>
+                      )}
+                    </fieldset>
+                    <div className="row-between filters-popover-footer">
+                      <button
+                        type="button"
+                        className="link-button"
+                        disabled={!hasActiveFilters}
+                        onClick={() => updateFilters(NO_FILTERS)}
+                      >
+                        Clear all
+                      </button>
+                      <button type="button" className="primary" onClick={() => setShowFilters(false)}>
+                        Show {visibleProjects.length} {visibleProjects.length === 1 ? 'project' : 'projects'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+          {canEdit && (
+            <button className="primary" onClick={() => setShowForm((s) => !s)}>
+              {showForm ? 'Cancel' : 'New Project'}
+            </button>
+          )}
+        </div>
       </div>
 
       {canEdit && showForm && (
@@ -375,63 +557,6 @@ export default function Projects() {
 
       {projects && projects.length > 0 && (
         <>
-          <div className="panel projects-toolbar">
-            {canSeeCompanyInfo && (
-              <>
-                <label className="filter-group">
-                  <span className="muted">Company</span>
-                  <select
-                    value={filters.companyId}
-                    onChange={(e) => updateFilters({ companyId: e.target.value, departmentId: 'all' })}
-                  >
-                    <option value="all">All companies</option>
-                    {companies.map(([id, label]) => (
-                      <option key={id} value={id}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="filter-group">
-                  <span className="muted">Department</span>
-                  <select
-                    value={filters.departmentId}
-                    onChange={(e) => updateFilters({ departmentId: e.target.value })}
-                  >
-                    <option value="all">All departments</option>
-                    {departments.map(([id, label]) => (
-                      <option key={id} value={id}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="filter-group">
-                  <span className="muted">Responsible Person</span>
-                  <select value={filters.userId} onChange={(e) => updateFilters({ userId: e.target.value })}>
-                    <option value="all">All users</option>
-                    {assignableUsers.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {formatUserName(u)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </>
-            )}
-            <div className="filter-group">
-              <span className="muted">Rollout Date</span>
-              <button type="button" onClick={toggleRolloutSort} title="Click to flip the order">
-                {rolloutSort === 'earliest' ? '↑ Earliest first' : '↓ Latest first'}
-              </button>
-            </div>
-            {hasActiveFilters && (
-              <button type="button" className="clear-filters" onClick={() => updateFilters(NO_FILTERS)}>
-                Clear filters
-              </button>
-            )}
-          </div>
-
           <div className="status-tabs">
             <button
               type="button"
@@ -451,6 +576,28 @@ export default function Projects() {
               </button>
             ))}
           </div>
+
+          {activeChips.length > 0 && (
+            <div className="filter-chips" aria-label="Active filters">
+              {activeChips.map((chip) => (
+                <span key={chip.key} className="filter-chip">
+                  <span className="muted">{chip.label}:</span> {chip.value}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${chip.label} filter`}
+                    onClick={() => updateFilters(chip.clear)}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              {activeChips.length > 1 && (
+                <button type="button" className="link-button" onClick={() => updateFilters(NO_FILTERS)}>
+                  Clear all
+                </button>
+              )}
+            </div>
+          )}
         </>
       )}
 
@@ -480,8 +627,12 @@ export default function Projects() {
               )}
               {p.description && <div className="muted project-meta multiline">{p.description}</div>}
             </div>
+            {isMaster && <CardInsights project={p} insights={insights[p.id]} />}
             <div className="project-status-col">
               <StatusBadge status={p.status} />
+              {isMaster && commencementDate(p) && (
+                <div className="muted project-owner">Commenced: {formatDate(commencementDate(p))}</div>
+              )}
               {p.current_rollout_date && (
                 <div className="muted project-owner">Rollout: {formatDate(p.current_rollout_date)}</div>
               )}

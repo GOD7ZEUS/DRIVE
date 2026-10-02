@@ -19,12 +19,21 @@ const router = Router();
 const canEdit = requireRole('super_admin', 'pro_admin', 'admin');
 const superAdminOnly = requireRole('super_admin', 'pro_admin');
 
-// The plan-lock password hash never leaves the server — every project
-// response is scrubbed down to just a `plan_locked` boolean instead.
-function stripPlanLock(project) {
+// Every project response goes through here. The plan-lock password hash
+// never leaves the server (scrubbed to a `plan_locked` boolean), and the
+// Project Commencement Date is master-only — stripped server-side for
+// everyone else, not just hidden in the UI. created_at goes too: it's the
+// same moment for every project made since commencement was added, so
+// leaving it in would hand out the commencement date under another name.
+function toProjectResponse(project, req) {
   if (!project) return project;
-  const { plan_lock_hash, ...rest } = project;
-  return { ...rest, plan_locked: !!plan_lock_hash };
+  const { plan_lock_hash, commenced_at, created_at, ...rest } = project;
+  const response = { ...rest, plan_locked: !!plan_lock_hash };
+  if (req.user.is_master) {
+    response.commenced_at = commenced_at;
+    response.created_at = created_at;
+  }
+  return response;
 }
 
 const PROJECT_STATUSES = ['planning', 'active', 'on_hold', 'completed'];
@@ -104,7 +113,7 @@ router.get('/', async (req, res, next) => {
          WHERE ${PRIVATE_COMPANY_EXCLUSION} ORDER BY created_at DESC`
       );
     }
-    res.json(projects.map(stripPlanLock));
+    res.json(projects.map((p) => toProjectResponse(p, req)));
   } catch (err) {
     next(err);
   }
@@ -185,8 +194,8 @@ router.post('/', canEdit, async (req, res, next) => {
     }
 
     const result = await run(
-      `INSERT INTO projects (name, description, status, company, department, company_id, department_id, sub_department, sub_department_id, responsible_person, responsible_user_id, assigned_by, assigned_by_user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO projects (name, description, status, company, department, company_id, department_id, sub_department, sub_department_id, responsible_person, responsible_user_id, assigned_by, assigned_by_user_id, commenced_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
       name.trim(),
       description,
       status,
@@ -202,7 +211,7 @@ router.post('/', canEdit, async (req, res, next) => {
       assignedByUser ? assignedByUser.id : null
     );
     const project = await get('SELECT * FROM projects WHERE id = ?', result.lastInsertRowid);
-    res.status(201).json(stripPlanLock(project));
+    res.status(201).json(toProjectResponse(project, req));
   } catch (err) {
     next(err);
   }
@@ -262,6 +271,121 @@ router.get('/assignable-users', async (req, res, next) => {
   }
 });
 
+// ── Master-only project insights ────────────────────────────────────────
+// Timestamps are stored as UTC 'YYYY-MM-DD HH:MM:SS'; the first 7 chars are
+// the month, so months compare and sort correctly as plain strings.
+const monthOf = (ts) => ts.slice(0, 7);
+
+function monthsBetween(startMonth, endMonth) {
+  const months = [];
+  let [y, m] = startMonth.split('-').map(Number);
+  const [endY, endM] = endMonth.split('-').map(Number);
+  while ((y < endY || (y === endY && m <= endM)) && months.length < 240) {
+    months.push(`${y}-${String(m).padStart(2, '0')}`);
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return months;
+}
+
+// One project's task picture: status counts, the latest-touched task, and a
+// month-by-month series of tasks completed (plus the running total) from the
+// commencement month through the current month.
+function summarizeTasks(project, tasks) {
+  const statusCounts = { todo: 0, in_progress: 0, done: 0 };
+  for (const t of tasks) statusCounts[t.status] = (statusCounts[t.status] || 0) + 1;
+
+  const startMonth = monthOf(project.commenced_at || project.created_at);
+  const completed = tasks.filter((t) => t.status === 'done' && t.completed_at);
+  const perMonth = new Map();
+  let endMonth = new Date().toISOString().slice(0, 7);
+  for (const t of completed) {
+    // A completion stamped before the commencement month can't be plotted
+    // before the series starts, so it's counted in the first month.
+    const month = monthOf(t.completed_at) < startMonth ? startMonth : monthOf(t.completed_at);
+    perMonth.set(month, (perMonth.get(month) || 0) + 1);
+    if (month > endMonth) endMonth = month;
+  }
+  let cumulative = 0;
+  const months = monthsBetween(startMonth, endMonth < startMonth ? startMonth : endMonth).map((month) => {
+    const done = perMonth.get(month) || 0;
+    cumulative += done;
+    return { month, completed: done, cumulative };
+  });
+
+  const lastTask = tasks.reduce((latest, t) => (!latest || t.updated_at > latest.updated_at ? t : latest), null);
+  return {
+    totalTasks: tasks.length,
+    doneTasks: statusCounts.done,
+    statusCounts,
+    months,
+    lastTask: lastTask
+      ? { id: lastTask.id, title: lastTask.title, status: lastTask.status, updated_at: lastTask.updated_at }
+      : null,
+  };
+}
+
+const requireMaster = (req, res, next) =>
+  req.user.is_master ? next() : res.status(403).json({ error: 'project insights are only available to the master account' });
+
+// Compact insights for every project card at once (master sees every
+// project, so there's no scoping to apply here).
+router.get('/insights', requireMaster, async (req, res, next) => {
+  try {
+    const projects = await all('SELECT id, commenced_at, created_at FROM projects');
+    const tasks = await all('SELECT id, project_id, title, status, completed_at, updated_at FROM tasks');
+    const byProject = new Map();
+    for (const t of tasks) {
+      if (!byProject.has(t.project_id)) byProject.set(t.project_id, []);
+      byProject.get(t.project_id).push(t);
+    }
+    const result = {};
+    for (const p of projects) result[p.id] = summarizeTasks(p, byProject.get(p.id) || []);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/:id/insights', requireMaster, async (req, res, next) => {
+  try {
+    const project = await get('SELECT * FROM projects WHERE id = ?', req.params.id);
+    if (!project) return res.status(404).json({ error: 'project not found' });
+    const tasks = await all(
+      'SELECT id, title, status, assignee, due_date, completed_at, created_at, updated_at FROM tasks WHERE project_id = ?',
+      project.id
+    );
+    const milestones = await all('SELECT status FROM milestones WHERE project_id = ?', project.id);
+    const rolloutRevisions = (
+      await get('SELECT COUNT(*) as count FROM project_rollout_dates WHERE project_id = ?', project.id)
+    ).count;
+    const today = new Date().toISOString().slice(0, 10);
+    const pick = (t) => ({
+      id: t.id,
+      title: t.title,
+      status: t.status,
+      assignee: t.assignee,
+      due_date: t.due_date,
+      updated_at: t.updated_at,
+    });
+    res.json({
+      ...summarizeTasks(project, tasks),
+      milestones: { total: milestones.length, done: milestones.filter((m) => m.status === 'done').length },
+      rolloutRevisions,
+      overdueTasks: tasks
+        .filter((t) => t.status !== 'done' && t.due_date && t.due_date < today)
+        .sort((a, b) => a.due_date.localeCompare(b.due_date))
+        .map(pick),
+      recentTasks: [...tasks].sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, 5).map(pick),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/:id', async (req, res, next) => {
   try {
     const project = await get(
@@ -271,7 +395,7 @@ router.get('/:id', async (req, res, next) => {
     if (!project || !matchesScope(req, project) || (await blockedByPrivacy(req, project))) {
       return res.status(404).json({ error: 'project not found' });
     }
-    res.json(stripPlanLock(project));
+    res.json(toProjectResponse(project, req));
   } catch (err) {
     next(err);
   }
@@ -441,8 +565,9 @@ router.patch('/:id', canEdit, async (req, res, next) => {
     }
 
     res.json(
-      stripPlanLock(
-        await get(`SELECT projects.*, ${CURRENT_ROLLOUT_DATE_SUBQUERY} FROM projects WHERE id = ?`, req.params.id)
+      toProjectResponse(
+        await get(`SELECT projects.*, ${CURRENT_ROLLOUT_DATE_SUBQUERY} FROM projects WHERE id = ?`, req.params.id),
+        req
       )
     );
   } catch (err) {
@@ -650,8 +775,8 @@ router.post('/:id/tasks', canEdit, async (req, res, next) => {
     }
 
     const result = await run(
-      `INSERT INTO tasks (project_id, milestone_id, title, description, assignee, assignee_user_id, status, due_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO tasks (project_id, milestone_id, title, description, assignee, assignee_user_id, status, due_date, completed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'done' THEN datetime('now') END)`,
       req.params.id,
       milestone_id,
       title.trim(),
@@ -659,7 +784,8 @@ router.post('/:id/tasks', canEdit, async (req, res, next) => {
       assigneeUser ? displayName(assigneeUser) : '',
       assigneeUser ? assigneeUser.id : null,
       status,
-      due_date
+      due_date,
+      status
     );
     const task = await get('SELECT * FROM tasks WHERE id = ?', result.lastInsertRowid);
     if (assigneeUser) sendTaskAssignedEmail(assigneeUser.email, task, project);
