@@ -1,4 +1,4 @@
-const LABELS = {
+export const STATUS_LABELS = {
   planning: 'Planning',
   active: 'Active',
   on_hold: 'On Hold',
@@ -10,5 +10,5 @@ const LABELS = {
 };
 
 export default function StatusBadge({ status }) {
-  return <span className={`badge badge-${status}`}>{LABELS[status] || status}</span>;
+  return <span className={`badge badge-${status}`}>{STATUS_LABELS[status] || status}</span>;
 }

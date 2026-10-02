@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
-import StatusBadge from '../components/StatusBadge.jsx';
+import StatusBadge, { STATUS_LABELS } from '../components/StatusBadge.jsx';
 import CompanyDepartmentFields from '../components/CompanyDepartmentFields.jsx';
 import SubDepartmentField from '../components/SubDepartmentField.jsx';
 import { formatUserName } from '../userDisplay.js';
@@ -41,6 +41,7 @@ export default function Projects() {
   const [companyFilter, setCompanyFilter] = useState(searchParams.get('companyId') || 'all');
   const [departmentFilter, setDepartmentFilter] = useState(searchParams.get('departmentId') || 'all');
   const [userFilter, setUserFilter] = useState(searchParams.get('userId') || 'all');
+  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || 'all');
 
   function load() {
     api.getProjects().then(setProjects).catch((e) => setError(e.message));
@@ -68,7 +69,10 @@ export default function Projects() {
     return [...byId.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [projects]);
 
-  const visibleProjects = useMemo(() => {
+  // Company/department/user scoping only — kept separate from the status
+  // filter so the status tabs' own counts reflect "how many would show with
+  // the other filters as they are", not collapse to zero against themselves.
+  const companyScopedProjects = useMemo(() => {
     if (!projects) return [];
     if (!canSeeCompanyInfo) return projects;
     return projects.filter((p) => {
@@ -79,12 +83,34 @@ export default function Projects() {
     });
   }, [projects, companyFilter, departmentFilter, userFilter, canSeeCompanyInfo]);
 
+  const statusCounts = useMemo(() => {
+    const counts = { all: companyScopedProjects.length };
+    for (const s of STATUSES) counts[s] = companyScopedProjects.filter((p) => p.status === s).length;
+    return counts;
+  }, [companyScopedProjects]);
+
+  const visibleProjects = useMemo(() => {
+    const filtered =
+      statusFilter === 'all'
+        ? companyScopedProjects
+        : companyScopedProjects.filter((p) => p.status === statusFilter);
+    // Soonest rollout date first, furthest out last; projects with no
+    // rollout date set yet sink to the bottom rather than sorting first.
+    return [...filtered].sort((a, b) => {
+      if (!a.current_rollout_date && !b.current_rollout_date) return 0;
+      if (!a.current_rollout_date) return 1;
+      if (!b.current_rollout_date) return -1;
+      return a.current_rollout_date.localeCompare(b.current_rollout_date);
+    });
+  }, [companyScopedProjects, statusFilter]);
+
   function handleCompanyFilterChange(value) {
     setCompanyFilter(value);
     setDepartmentFilter('all');
     const next = {};
     if (value !== 'all') next.companyId = value;
     if (userFilter !== 'all') next.userId = userFilter;
+    if (statusFilter !== 'all') next.status = statusFilter;
     setSearchParams(next);
   }
 
@@ -94,6 +120,17 @@ export default function Projects() {
     if (companyFilter !== 'all') next.companyId = companyFilter;
     if (departmentFilter !== 'all') next.departmentId = departmentFilter;
     if (value !== 'all') next.userId = value;
+    if (statusFilter !== 'all') next.status = statusFilter;
+    setSearchParams(next);
+  }
+
+  function handleStatusFilterChange(value) {
+    setStatusFilter(value);
+    const next = {};
+    if (companyFilter !== 'all') next.companyId = companyFilter;
+    if (departmentFilter !== 'all') next.departmentId = departmentFilter;
+    if (userFilter !== 'all') next.userId = userFilter;
+    if (value !== 'all') next.status = value;
     setSearchParams(next);
   }
 
@@ -101,6 +138,7 @@ export default function Projects() {
     setCompanyFilter('all');
     setDepartmentFilter('all');
     setUserFilter('all');
+    setStatusFilter('all');
     setSearchParams({});
   }
 
@@ -177,6 +215,28 @@ export default function Projects() {
           )}
         </div>
       </div>
+
+      {projects && projects.length > 0 && (
+        <div className="status-tabs">
+          <button
+            type="button"
+            className={statusFilter === 'all' ? 'active' : ''}
+            onClick={() => handleStatusFilterChange('all')}
+          >
+            All <span className="muted">({statusCounts.all})</span>
+          </button>
+          {STATUSES.map((s) => (
+            <button
+              key={s}
+              type="button"
+              className={statusFilter === s ? 'active' : ''}
+              onClick={() => handleStatusFilterChange(s)}
+            >
+              {STATUS_LABELS[s]} <span className="muted">({statusCounts[s]})</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {canSeeCompanyInfo && departmentFilter !== 'all' && filteredDepartmentName && (
         <p className="muted" style={{ marginBottom: 12 }}>
