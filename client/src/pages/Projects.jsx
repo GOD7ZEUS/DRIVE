@@ -45,6 +45,23 @@ export default function Projects() {
     const fromUrl = searchParams.get('status');
     return STATUSES.includes(fromUrl) ? fromUrl : 'all';
   });
+  const [rolloutSort, setRolloutSort] = useState(() => {
+    try {
+      return localStorage.getItem('projects.rolloutSort') === 'latest' ? 'latest' : 'earliest';
+    } catch {
+      return 'earliest';
+    }
+  });
+
+  function toggleRolloutSort() {
+    const next = rolloutSort === 'earliest' ? 'latest' : 'earliest';
+    setRolloutSort(next);
+    try {
+      localStorage.setItem('projects.rolloutSort', next);
+    } catch {
+      // Storage can be unavailable (private mode); the toggle still works for this visit.
+    }
+  }
 
   function load() {
     api.getProjects().then(setProjects).catch((e) => setError(e.message));
@@ -97,15 +114,16 @@ export default function Projects() {
       statusFilter === 'all'
         ? companyScopedProjects
         : companyScopedProjects.filter((p) => p.status === statusFilter);
-    // Soonest rollout date first, furthest out last; projects with no
-    // rollout date set yet sink to the bottom rather than sorting first.
+    // Projects with no rollout date set yet sink to the bottom in either
+    // direction, rather than jumping to the top when the order flips.
+    const direction = rolloutSort === 'latest' ? -1 : 1;
     return [...filtered].sort((a, b) => {
       if (!a.current_rollout_date && !b.current_rollout_date) return 0;
       if (!a.current_rollout_date) return 1;
       if (!b.current_rollout_date) return -1;
-      return a.current_rollout_date.localeCompare(b.current_rollout_date);
+      return direction * a.current_rollout_date.localeCompare(b.current_rollout_date);
     });
-  }, [companyScopedProjects, statusFilter]);
+  }, [companyScopedProjects, statusFilter, rolloutSort]);
 
   function handleCompanyFilterChange(value) {
     setCompanyFilter(value);
@@ -210,6 +228,15 @@ export default function Projects() {
                 </option>
               ))}
             </select>
+          )}
+          {projects && projects.length > 0 && (
+            <button
+              type="button"
+              onClick={toggleRolloutSort}
+              title="Sort by rollout date — click to flip the order"
+            >
+              Rollout: {rolloutSort === 'earliest' ? '↑ Earliest first' : '↓ Latest first'}
+            </button>
           )}
           {canEdit && (
             <button className="primary" onClick={() => setShowForm((s) => !s)}>
