@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import { get, all, run, getOrCreateCompany, getOrCreateDepartment, logAudit, describeChanges } from '../db.js';
+import { db, get, all, run, getOrCreateCompany, getOrCreateDepartment, logAudit, describeChanges } from '../db.js';
 
 const router = Router();
 const ASSIGNABLE_ROLES = ['admin', 'view'];
@@ -325,7 +325,21 @@ router.delete('/:id', async (req, res, next) => {
     if (user.role === 'pro_admin' && !req.user.is_master) {
       return res.status(403).json({ error: 'only the master account can delete a Pro Admin account' });
     }
-    await run('DELETE FROM users WHERE id = ?', req.params.id);
+    // Four columns hold a foreign key to users, and with foreign keys
+    // enforced, any one of them still pointing here makes the delete fail.
+    // Clear just the id links — the display-name copies beside them (RESP,
+    // Assigned By, assignee, actor name) are kept, so projects/tasks and the
+    // Activity Log still read correctly after the account is gone.
+    await db.batch(
+      [
+        { sql: 'UPDATE projects SET responsible_user_id = NULL WHERE responsible_user_id = ?', args: [user.id] },
+        { sql: 'UPDATE projects SET assigned_by_user_id = NULL WHERE assigned_by_user_id = ?', args: [user.id] },
+        { sql: 'UPDATE tasks SET assignee_user_id = NULL WHERE assignee_user_id = ?', args: [user.id] },
+        { sql: 'UPDATE audit_log SET actor_user_id = NULL WHERE actor_user_id = ?', args: [user.id] },
+        { sql: 'DELETE FROM users WHERE id = ?', args: [user.id] },
+      ],
+      'write'
+    );
     await logAudit({
       actor: req.user,
       action: 'deleted',
