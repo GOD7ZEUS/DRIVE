@@ -636,6 +636,45 @@ a.list-item:hover {
   font-weight: 600;
 }
 
+/* Every project card is the same size: a fixed height on desktop (sized to
+   fit the tallest right-hand column of five pills), with a long description
+   scrolling inside its own area instead of stretching the card. */
+.project-row .project-description {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.project-row .project-description::-webkit-scrollbar {
+  width: 6px;
+}
+
+.project-row .project-description::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+
+@media (min-width: 861px) {
+  .project-row {
+    height: 240px;
+    overflow: hidden;
+  }
+
+  .project-row .list-item-info {
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .project-row .project-description {
+    flex: 1 1 0;
+  }
+}
+
 .project-row .project-status-col {
   display: flex;
   flex-direction: column;
@@ -1281,6 +1320,10 @@ a.list-item:hover {
 
   .project-row .list-item-info {
     flex-basis: calc(100% - 180px);
+  }
+
+  .project-row .project-description {
+    max-height: 120px;
   }
 
   .card-insights {

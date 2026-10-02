@@ -112,6 +112,8 @@ export function getCountdown(project) {
 // "Day 40 of 120" — or, once a project runs past its plan, "Day 154 · planned
 // 132" rather than the nonsensical "Day 154 of 132".
 function dayLabel(countdown) {
+  // Commenced on or after the rollout date: there's no planned span to compare against.
+  if (countdown.totalDays <= 0) return `Day ${countdown.elapsedDays} since commencement`;
   return countdown.elapsedDays > countdown.totalDays
     ? `Day ${countdown.elapsedDays} · planned ${countdown.totalDays}`
     : `Day ${countdown.elapsedDays} of ${countdown.totalDays}`;

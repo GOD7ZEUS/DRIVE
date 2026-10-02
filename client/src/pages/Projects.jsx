@@ -649,7 +649,7 @@ export default function Projects() {
                   )}
                 </div>
               )}
-              {p.description && <div className="muted project-meta multiline">{p.description}</div>}
+              {p.description && <div className="muted project-meta multiline project-description">{p.description}</div>}
             </div>
             {insightsOn && <CardInsights project={p} insights={insights[p.id]} />}
             <div className="project-status-col">
