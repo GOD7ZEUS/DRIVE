@@ -41,7 +41,10 @@ export default function Projects() {
   const [companyFilter, setCompanyFilter] = useState(searchParams.get('companyId') || 'all');
   const [departmentFilter, setDepartmentFilter] = useState(searchParams.get('departmentId') || 'all');
   const [userFilter, setUserFilter] = useState(searchParams.get('userId') || 'all');
-  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || 'all');
+  const [statusFilter, setStatusFilter] = useState(() => {
+    const fromUrl = searchParams.get('status');
+    return STATUSES.includes(fromUrl) ? fromUrl : 'all';
+  });
 
   function load() {
     api.getProjects().then(setProjects).catch((e) => setError(e.message));

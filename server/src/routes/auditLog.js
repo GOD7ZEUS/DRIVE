@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { get, all, run, logAudit } from '../db.js';
+import { db, get, all, logAudit } from '../db.js';
 import { pruneAuditLog } from '../auditRetention.js';
 
 const router = Router();
@@ -50,18 +50,37 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-function reinsertRow(tableName, row) {
+function insertStatement(tableName, row) {
   const keys = Object.keys(row);
-  const columns = keys.join(', ');
-  const placeholders = keys.map(() => '?').join(', ');
-  return run(`INSERT INTO ${tableName} (${columns}) VALUES (${placeholders})`, ...keys.map((k) => row[k]));
+  return {
+    sql: `INSERT INTO ${tableName} (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`,
+    args: keys.map((k) => row[k]),
+  };
 }
 
-function revertToSnapshot(tableName, before) {
+function revertStatement(tableName, before) {
   const { id, ...fields } = before;
   const keys = Object.keys(fields);
-  const setClause = keys.map((k) => `${k} = ?`).join(', ');
-  return run(`UPDATE ${tableName} SET ${setClause} WHERE id = ?`, ...keys.map((k) => fields[k]), id);
+  return {
+    sql: `UPDATE ${tableName} SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`,
+    args: [...keys.map((k) => fields[k]), id],
+  };
+}
+
+// Maps a constraint failure from the restore batch to something actionable.
+// The batch is atomic, so any of these means nothing was changed at all.
+function describeRestoreFailure(err, tableName) {
+  const msg = String(err.message);
+  if (msg.includes('FOREIGN KEY constraint failed')) {
+    return 'cannot restore — something it depends on no longer exists (e.g. its project, company, department, or an assigned user was deleted since)';
+  }
+  if (msg.includes(`UNIQUE constraint failed: ${tableName}.id`)) {
+    return 'cannot restore — this record already exists again (it may have been restored already)';
+  }
+  if (msg.includes('UNIQUE constraint failed')) {
+    return 'cannot restore — something with the same unique name/email already exists';
+  }
+  return null;
 }
 
 router.post('/:id/restore', async (req, res, next) => {
@@ -87,40 +106,54 @@ router.post('/:id/restore', async (req, res, next) => {
     }
 
     const snapshot = JSON.parse(entry.snapshot);
+    const statements = [];
 
-    try {
-      if (entry.action === 'updated') {
-        await revertToSnapshot(tableName, snapshot.before);
-      } else if (entry.entity_type === 'project') {
-        await reinsertRow('projects', snapshot.row);
-        for (const m of snapshot.milestones ?? []) await reinsertRow('milestones', m);
-        for (const t of snapshot.tasks ?? []) await reinsertRow('tasks', t);
-        for (const c of snapshot.comments ?? []) await reinsertRow('comments', c);
-        for (const r of snapshot.rolloutDates ?? []) await reinsertRow('project_rollout_dates', r);
-      } else if (entry.entity_type === 'milestone') {
-        await reinsertRow('milestones', snapshot.row);
-        for (const taskId of snapshot.linkedTaskIds ?? []) {
-          await run('UPDATE tasks SET milestone_id = ? WHERE id = ? AND milestone_id IS NULL', snapshot.row.id, taskId);
-        }
-      } else if (entry.entity_type === 'task') {
-        await reinsertRow('tasks', snapshot.row);
-        for (const c of snapshot.comments ?? []) await reinsertRow('comments', c);
-      } else {
-        await reinsertRow(tableName, snapshot.row);
-      }
-    } catch (err) {
-      // A unique-constraint collision (e.g. a new user/company already took
-      // the old email/name) is the one realistic failure mode here — surface
-      // it plainly instead of a raw 500.
-      if (String(err.message).includes('UNIQUE constraint failed')) {
+    if (entry.action === 'updated') {
+      // Reverting an edit only makes sense if the thing still exists — an
+      // UPDATE against a since-deleted row would silently match nothing.
+      const stillExists = await get(`SELECT id FROM ${tableName} WHERE id = ?`, snapshot.before.id);
+      if (!stillExists) {
         return res.status(409).json({
-          error: 'cannot restore — something with the same unique name/email already exists',
+          error: 'cannot revert this edit — it has since been deleted (restore the deletion first)',
         });
       }
+      statements.push(revertStatement(tableName, snapshot.before));
+    } else if (entry.entity_type === 'project') {
+      statements.push(insertStatement('projects', snapshot.row));
+      for (const m of snapshot.milestones ?? []) statements.push(insertStatement('milestones', m));
+      for (const t of snapshot.tasks ?? []) statements.push(insertStatement('tasks', t));
+      for (const c of snapshot.comments ?? []) statements.push(insertStatement('comments', c));
+      for (const r of snapshot.rolloutDates ?? []) statements.push(insertStatement('project_rollout_dates', r));
+    } else if (entry.entity_type === 'milestone') {
+      statements.push(insertStatement('milestones', snapshot.row));
+      for (const taskId of snapshot.linkedTaskIds ?? []) {
+        statements.push({
+          sql: 'UPDATE tasks SET milestone_id = ? WHERE id = ? AND milestone_id IS NULL',
+          args: [snapshot.row.id, taskId],
+        });
+      }
+    } else if (entry.entity_type === 'task') {
+      statements.push(insertStatement('tasks', snapshot.row));
+      for (const c of snapshot.comments ?? []) statements.push(insertStatement('comments', c));
+    } else {
+      statements.push(insertStatement(tableName, snapshot.row));
+    }
+    statements.push({
+      sql: "UPDATE audit_log SET restored_at = datetime('now') WHERE id = ?",
+      args: [entry.id],
+    });
+
+    // One atomic batch: a project restore is several inserts, and a failure
+    // partway through (say, a task whose assigned user was deleted since)
+    // must not leave a half-restored project behind.
+    try {
+      await db.batch(statements, 'write');
+    } catch (err) {
+      const message = describeRestoreFailure(err, tableName);
+      if (message) return res.status(409).json({ error: message });
       throw err;
     }
 
-    await run('UPDATE audit_log SET restored_at = datetime(\'now\') WHERE id = ?', entry.id);
     await logAudit({
       actor: req.user,
       action: 'restored',

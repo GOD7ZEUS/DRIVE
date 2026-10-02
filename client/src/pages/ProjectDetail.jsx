@@ -942,7 +942,7 @@ export default function ProjectDetail() {
                         <button
                           type="button"
                           onClick={() => triggerMilestoneAttachmentUpload(m.id)}
-                          disabled={uploadingMilestoneAttachment && uploadTargetMilestoneId === m.id}
+                          disabled={uploadingMilestoneAttachment}
                         >
                           {uploadingMilestoneAttachment && uploadTargetMilestoneId === m.id
                             ? 'Uploading…'
